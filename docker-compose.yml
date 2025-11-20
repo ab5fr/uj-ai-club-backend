@@ -180,10 +180,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_POLL_INTERVAL=60
       - WATCHTOWER_INCLUDE_RESTARTING=true
       - WATCHTOWER_ROLLING_RESTART=true
       - WATCHTOWER_LABEL_ENABLE=false
+      - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      - WATCHTOWER_NOTIFICATION_URL=${DISCORD_WEBHOOK_URL}
+      - WATCHTOWER_NOTIFICATION_REPORT=true
     command: uj-ai-club-backend-1 uj-ai-club-backend-2 uj-ai-club-backend-3
     networks:
       - backend_network
