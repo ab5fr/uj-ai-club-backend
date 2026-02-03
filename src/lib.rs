@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod error;
+#[path = "handlers/mod.rs"]
 pub mod handlers;
 pub mod models;
 
@@ -59,27 +60,49 @@ pub fn create_app(pool: sqlx::PgPool) -> Router {
         .allow_headers(Any);
 
     Router::new()
+        // Health
         .route("/health", get(handlers::health_check))
-        .route("/auth/signup", post(handlers::signup))
+        // Auth
+        // .route("/auth/signup", post(handlers::signup))
         .route("/auth/login", post(handlers::login))
         .route("/auth/google", get(handlers::google_auth_init))
         .route("/auth/google/callback", get(handlers::google_auth_callback))
         .route("/auth/complete-profile", post(handlers::complete_profile))
+        // Public content
         .route("/leaderboards", get(handlers::get_leaderboards))
         .route("/resources", get(handlers::get_resources))
         .route("/resources/:id", get(handlers::get_resource_by_id))
+        .route("/contact", post(handlers::create_contact))
+        // Challenges
+        .route("/challenges", get(handlers::get_challenges_with_notebooks))
         .route("/challenges/current", get(handlers::get_current_challenge))
         .route(
             "/challenges/leaderboard",
             get(handlers::get_challenge_leaderboard),
         )
         .route(
+            "/challenges/:id/leaderboard",
+            get(handlers::get_challenge_submission_leaderboard),
+        )
+        .route(
+            "/challenges/:id/submission",
+            get(handlers::get_user_submission),
+        )
+        .route("/challenges/:id/start", post(handlers::start_challenge))
+        .route("/challenges/:id/submit", post(handlers::submit_challenge))
+        // Users
+        .route(
             "/users/profile",
             put(handlers::update_user_profile).get(handlers::get_user_profile),
         )
         .route("/users/avatar", post(handlers::upload_user_avatar))
         .route("/users/password", put(handlers::update_user_password))
-        .route("/contact", post(handlers::create_contact))
+        // Webhooks
+        .route(
+            "/webhooks/nbgrader/grade",
+            post(handlers::nbgrader_grade_webhook),
+        )
+        // Admin: resources
         .route("/admin/resources", get(handlers::admin_get_resources))
         .route(
             "/admin/resources",
@@ -101,6 +124,7 @@ pub fn create_app(pool: sqlx::PgPool) -> Router {
             "/admin/resources/:id/visibility",
             patch(handlers::admin_patch_resource_visibility),
         )
+        // Admin: challenges
         .route("/admin/challenges", get(handlers::admin_get_challenges))
         .route("/admin/challenges", post(handlers::admin_create_challenge))
         .route(
@@ -119,6 +143,32 @@ pub fn create_app(pool: sqlx::PgPool) -> Router {
             "/admin/challenges/:id/visibility",
             patch(handlers::admin_patch_challenge_visibility),
         )
+        .route(
+            "/admin/challenges/:id/notebook",
+            get(handlers::admin_get_notebook_by_challenge),
+        )
+        // Admin: notebooks
+        .route("/admin/notebooks", get(handlers::admin_get_notebooks))
+        .route(
+            "/admin/notebooks",
+            post(handlers::admin_create_notebook_multipart),
+        )
+        .route("/admin/notebooks/:id", put(handlers::admin_update_notebook))
+        .route(
+            "/admin/notebooks/:id",
+            delete(handlers::admin_delete_notebook),
+        )
+        .route(
+            "/admin/notebooks/:id/edit",
+            get(handlers::admin_get_notebook_edit_url),
+        )
+        .route(
+            "/admin/notebooks/:id/sync",
+            post(handlers::admin_sync_notebook_to_nbgrader),
+        )
+        // Admin: submissions
+        .route("/admin/submissions", get(handlers::admin_get_submissions))
+        // Static
         .nest_service("/uploads", ServeDir::new("uploads"))
         .layer(cors)
         .with_state(app_state)

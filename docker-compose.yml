@@ -35,6 +35,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
       FRONTEND_URL: ${FRONTEND_URL}
+      JUPYTERHUB_URL: ${JUPYTERHUB_URL}
+      NBGRADER_WEBHOOK_SECRET: ${NBGRADER_WEBHOOK_SECRET}
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -72,6 +74,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
       FRONTEND_URL: ${FRONTEND_URL}
+      JUPYTERHUB_URL: ${JUPYTERHUB_URL}
+      NBGRADER_WEBHOOK_SECRET: ${NBGRADER_WEBHOOK_SECRET}
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -109,6 +113,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
       FRONTEND_URL: ${FRONTEND_URL}
+      JUPYTERHUB_URL: ${JUPYTERHUB_URL}
+      NBGRADER_WEBHOOK_SECRET: ${NBGRADER_WEBHOOK_SECRET}
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -191,11 +197,89 @@ services:
     networks:
       - backend_network
 
+  jupyterhub:
+    build:
+      context: ./jupyterhub
+      dockerfile: Dockerfile
+    container_name: uj-ai-club-jupyterhub
+    restart: unless-stopped
+    ports:
+      - "8888:8000"
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      MAIN_APP_URL: ${FRONTEND_URL}
+      GRADING_WEBHOOK_URL: http://backend1:8000/webhooks/nbgrader/grade
+      NBGRADER_WEBHOOK_SECRET: ${NBGRADER_WEBHOOK_SECRET}
+      JUPYTERHUB_ADMIN_USERS: ${JUPYTERHUB_ADMIN_USERS}
+      JUPYTERHUB_API_TOKEN: ${JUPYTERHUB_API_TOKEN}
+      DOCKER_NETWORK_NAME: uj-ai-club-backend_jupyterhub-internal
+      # For production: use NOTEBOOKS_VOLUME_NAME with Docker volume
+      # For local dev: use NOTEBOOKS_HOST_PATH with host bind mount path
+      NOTEBOOKS_VOLUME_NAME: uj-ai-club-backend_uploads_data
+      # Local development: set this to absolute path of uploads directory
+      # e.g., /c/Users/ab5/codes/uj-ai-club/uj-ai-club-backend/uploads
+      NOTEBOOKS_HOST_PATH: ${NOTEBOOKS_HOST_PATH:-}
+    volumes:
+      - jupyterhub_data:/data
+      - nbgrader_exchange:/srv/nbgrader/exchange
+      - nbgrader_course:/srv/nbgrader/course
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount local uploads directory for development (backend running locally)
+      # Change to uploads_data:/srv/notebooks:ro for production
+      - ./uploads:/srv/notebooks:ro
+    networks:
+      - backend_network
+      - jupyterhub-internal
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/hub/api"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  grading-service:
+    build:
+      context: ./jupyterhub
+      dockerfile: Dockerfile.grading
+    container_name: uj-ai-club-grading
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    environment:
+      EXCHANGE_ROOT: /srv/nbgrader/exchange
+      COURSE_ID: ujaiclub
+      # For local dev with backend on host, use host.docker.internal
+      # For production with backend in Docker, use backend1:8000
+      GRADING_WEBHOOK_URL: http://host.docker.internal:8000/webhooks/nbgrader/grade
+      NBGRADER_WEBHOOK_SECRET: ${NBGRADER_WEBHOOK_SECRET}
+      GRADING_SERVICE_PORT: "9100"
+    volumes:
+      - nbgrader_exchange:/srv/nbgrader/exchange
+      - nbgrader_course:/srv/nbgrader/course
+      - jupyterhub_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount uploads for syncing notebooks to nbgrader
+      - ./uploads:/srv/notebooks:ro
+    networks:
+      - backend_network
+      - jupyterhub-internal
+    depends_on:
+      - jupyterhub
+
 networks:
   backend_network:
     driver: bridge
+
+  jupyterhub-internal:
+    driver: bridge
+    internal: true
 
 volumes:
   postgres_data:
   nginx_logs:
   uploads_data:
+  jupyterhub_data:
+  nbgrader_exchange:
+  nbgrader_course:

@@ -3,7 +3,7 @@ use axum::{
     extract::{FromRef, FromRequestParts},
     http::{header::AUTHORIZATION, request::Parts},
 };
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -49,6 +49,48 @@ impl Claims {
 pub fn create_token(user_id: Uuid) -> Result<String, AppError> {
     encode(&Header::default(), &Claims::new(user_id), &KEYS.encoding)
         .map_err(|e| AppError::InternalError(e.into()))
+}
+
+/// Claims for JupyterHub SSO token
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JupyterHubClaims {
+    pub sub: String,      // User ID
+    pub username: String, // JupyterHub username
+    pub exp: i64,         // Expiration
+    pub iat: i64,         // Issued at
+    pub purpose: String,  // "jupyterhub_sso"
+}
+
+/// Create a JWT token for JupyterHub SSO authentication
+/// This token has a shorter lifespan (1 hour) and includes the JupyterHub username
+pub fn create_jupyterhub_token(
+    user_id: Uuid,
+    jupyterhub_username: &str,
+) -> Result<String, AppError> {
+    let now = chrono::Utc::now();
+    let claims = JupyterHubClaims {
+        sub: user_id.to_string(),
+        username: jupyterhub_username.to_string(),
+        exp: (now + chrono::Duration::hours(1)).timestamp(),
+        iat: now.timestamp(),
+        purpose: "jupyterhub_sso".to_string(),
+    };
+
+    encode(&Header::default(), &claims, &KEYS.encoding)
+        .map_err(|e| AppError::InternalError(e.into()))
+}
+
+/// Verify and decode a JupyterHub SSO token
+/// Returns the claims if valid
+pub fn verify_jupyterhub_token(token: &str) -> Result<JupyterHubClaims, AppError> {
+    let token_data = decode::<JupyterHubClaims>(token, &KEYS.decoding, &Validation::default())
+        .map_err(|_| AppError::AuthError)?;
+
+    if token_data.claims.purpose != "jupyterhub_sso" {
+        return Err(AppError::AuthError);
+    }
+
+    Ok(token_data.claims)
 }
 
 pub struct AuthUser {

@@ -35,6 +35,26 @@ mod date_format {
     }
 }
 
+// Custom serializer for OffsetDateTime to ISO 8601 string
+mod iso8601_option {
+    use serde::{self, Serializer};
+    use time::OffsetDateTime;
+    use time::format_description::well_known::Rfc3339;
+
+    pub fn serialize<S>(date: &Option<OffsetDateTime>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match date {
+            Some(dt) => {
+                let s = dt.format(&Rfc3339).map_err(serde::ser::Error::custom)?;
+                serializer.serialize_some(&s)
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct User {
     pub id: Uuid,
@@ -47,6 +67,7 @@ pub struct User {
     pub points: i32,
     pub rank: i32,
     pub role: String,
+    pub jupyterhub_username: Option<String>,
     pub created_at: time::OffsetDateTime,
 }
 
@@ -373,7 +394,6 @@ pub struct AdminSuccessResponse {
 pub struct UpdateProfileRequest {
     #[serde(rename = "fullName")]
     pub full_name: Option<String>,
-    pub email: Option<String>,
     pub image: Option<String>,
 }
 
@@ -410,10 +430,21 @@ pub struct UpdatePasswordResponse {
 pub struct CompleteProfileRequest {
     pub university: String,
     pub major: String,
+    pub password: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CompleteProfileResponse {
+    pub success: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetPasswordRequest {
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SetPasswordResponse {
     pub success: bool,
 }
 
@@ -423,4 +454,298 @@ pub struct GoogleUserInfo {
     pub email: String,
     pub name: Option<String>,
     pub picture: Option<String>,
+}
+
+// ============================================
+// JupyterHub / nbgrader Challenge Integration
+// ============================================
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ChallengeNotebook {
+    pub id: i32,
+    pub challenge_id: i32,
+    pub assignment_name: String,
+    pub notebook_filename: String,
+    pub notebook_path: String,
+    pub max_points: i32,
+    pub cpu_limit: f64,
+    pub memory_limit: String,
+    pub time_limit_minutes: i32,
+    pub network_disabled: bool,
+    pub created_at: time::OffsetDateTime,
+    pub updated_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ChallengeSubmission {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub challenge_id: i32,
+    pub notebook_id: i32,
+    pub status: String,
+    pub score: Option<f64>,
+    pub max_score: Option<f64>,
+    pub points_awarded: i32,
+    pub points_credited: bool,
+    pub nbgrader_submission_id: Option<String>,
+    pub started_at: Option<time::OffsetDateTime>,
+    pub submitted_at: Option<time::OffsetDateTime>,
+    pub graded_at: Option<time::OffsetDateTime>,
+    pub created_at: time::OffsetDateTime,
+    pub updated_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubmissionStatus {
+    NotStarted,
+    InProgress,
+    Submitted,
+    Grading,
+    Graded,
+    Error,
+}
+
+impl SubmissionStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SubmissionStatus::NotStarted => "not_started",
+            SubmissionStatus::InProgress => "in_progress",
+            SubmissionStatus::Submitted => "submitted",
+            SubmissionStatus::Grading => "grading",
+            SubmissionStatus::Graded => "graded",
+            SubmissionStatus::Error => "error",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "not_started" => Some(SubmissionStatus::NotStarted),
+            "in_progress" => Some(SubmissionStatus::InProgress),
+            "submitted" => Some(SubmissionStatus::Submitted),
+            "grading" => Some(SubmissionStatus::Grading),
+            "graded" => Some(SubmissionStatus::Graded),
+            "error" => Some(SubmissionStatus::Error),
+            _ => None,
+        }
+    }
+}
+
+// API Request/Response types for Challenge Notebooks
+
+#[derive(Debug, Serialize)]
+pub struct ChallengeNotebookResponse {
+    pub id: i32,
+    #[serde(rename = "challengeId")]
+    pub challenge_id: i32,
+    #[serde(rename = "assignmentName")]
+    pub assignment_name: String,
+    #[serde(rename = "notebookFilename")]
+    pub notebook_filename: String,
+    #[serde(rename = "maxPoints")]
+    pub max_points: i32,
+    #[serde(rename = "timeLimitMinutes")]
+    pub time_limit_minutes: i32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChallengeWithNotebookResponse {
+    pub id: i32,
+    pub week: i32,
+    pub title: String,
+    pub description: String,
+    #[serde(rename = "hasNotebook")]
+    pub has_notebook: bool,
+    #[serde(rename = "maxPoints")]
+    pub max_points: Option<i32>,
+    #[serde(rename = "timeLimitMinutes")]
+    pub time_limit_minutes: Option<i32>,
+    #[serde(rename = "startDate", serialize_with = "iso8601_option::serialize")]
+    pub start_date: Option<time::OffsetDateTime>,
+    #[serde(rename = "endDate", serialize_with = "iso8601_option::serialize")]
+    pub end_date: Option<time::OffsetDateTime>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserSubmissionResponse {
+    pub id: Uuid,
+    #[serde(rename = "challengeId")]
+    pub challenge_id: i32,
+    pub status: String,
+    pub score: Option<f64>,
+    #[serde(rename = "maxScore")]
+    pub max_score: Option<f64>,
+    #[serde(rename = "pointsAwarded")]
+    pub points_awarded: i32,
+    #[serde(rename = "startedAt", serialize_with = "iso8601_option::serialize")]
+    pub started_at: Option<time::OffsetDateTime>,
+    #[serde(rename = "submittedAt", serialize_with = "iso8601_option::serialize")]
+    pub submitted_at: Option<time::OffsetDateTime>,
+    #[serde(rename = "gradedAt", serialize_with = "iso8601_option::serialize")]
+    pub graded_at: Option<time::OffsetDateTime>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StartChallengeResponse {
+    pub success: bool,
+    #[serde(rename = "jupyterhubUrl")]
+    pub jupyterhub_url: String,
+    #[serde(rename = "submissionId")]
+    pub submission_id: Uuid,
+    pub token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NbgraderWebhookPayload {
+    #[serde(rename = "assignmentName")]
+    pub assignment_name: String,
+    #[serde(rename = "studentId")]
+    pub student_id: String,
+    #[serde(rename = "submissionId")]
+    pub submission_id: Option<String>,
+    pub score: f64,
+    #[serde(rename = "maxScore")]
+    pub max_score: f64,
+    pub timestamp: Option<String>,
+    /// Secret key to verify the webhook is from JupyterHub
+    #[serde(rename = "webhookSecret")]
+    pub webhook_secret: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NbgraderWebhookResponse {
+    pub success: bool,
+    #[serde(rename = "pointsAwarded")]
+    pub points_awarded: i32,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SubmitChallengeResponse {
+    pub success: bool,
+    pub message: String,
+    pub status: String,
+}
+
+// Admin types for notebook management
+
+#[derive(Debug, Serialize)]
+pub struct AdminChallengeNotebookResponse {
+    pub id: i32,
+    #[serde(rename = "challengeId")]
+    pub challenge_id: i32,
+    #[serde(rename = "assignmentName")]
+    pub assignment_name: String,
+    #[serde(rename = "notebookFilename")]
+    pub notebook_filename: String,
+    #[serde(rename = "notebookPath")]
+    pub notebook_path: String,
+    #[serde(rename = "maxPoints")]
+    pub max_points: i32,
+    #[serde(rename = "cpuLimit")]
+    pub cpu_limit: f64,
+    #[serde(rename = "memoryLimit")]
+    pub memory_limit: String,
+    #[serde(rename = "timeLimitMinutes")]
+    pub time_limit_minutes: i32,
+    #[serde(rename = "networkDisabled")]
+    pub network_disabled: bool,
+    #[serde(rename = "createdAt")]
+    pub created_at: time::OffsetDateTime,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdminCreateNotebookRequest {
+    #[serde(rename = "challengeId")]
+    pub challenge_id: i32,
+    #[serde(rename = "assignmentName")]
+    pub assignment_name: String,
+    #[serde(rename = "maxPoints")]
+    pub max_points: Option<i32>,
+    #[serde(rename = "cpuLimit")]
+    pub cpu_limit: Option<f64>,
+    #[serde(rename = "memoryLimit")]
+    pub memory_limit: Option<String>,
+    #[serde(rename = "timeLimitMinutes")]
+    pub time_limit_minutes: Option<i32>,
+    #[serde(rename = "networkDisabled")]
+    pub network_disabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdminUpdateNotebookRequest {
+    #[serde(rename = "assignmentName")]
+    pub assignment_name: Option<String>,
+    #[serde(rename = "maxPoints")]
+    pub max_points: Option<i32>,
+    #[serde(rename = "cpuLimit")]
+    pub cpu_limit: Option<f64>,
+    #[serde(rename = "memoryLimit")]
+    pub memory_limit: Option<String>,
+    #[serde(rename = "timeLimitMinutes")]
+    pub time_limit_minutes: Option<i32>,
+    #[serde(rename = "networkDisabled")]
+    pub network_disabled: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminSubmissionResponse {
+    pub id: Uuid,
+    #[serde(rename = "userId")]
+    pub user_id: Uuid,
+    #[serde(rename = "userName")]
+    pub user_name: String,
+    #[serde(rename = "userEmail")]
+    pub user_email: String,
+    #[serde(rename = "challengeId")]
+    pub challenge_id: i32,
+    #[serde(rename = "challengeTitle")]
+    pub challenge_title: String,
+    pub status: String,
+    pub score: Option<f64>,
+    #[serde(rename = "maxScore")]
+    pub max_score: Option<f64>,
+    #[serde(rename = "pointsAwarded")]
+    pub points_awarded: i32,
+    #[serde(rename = "pointsCredited")]
+    pub points_credited: bool,
+    #[serde(rename = "startedAt", serialize_with = "iso8601_option::serialize")]
+    pub started_at: Option<time::OffsetDateTime>,
+    #[serde(rename = "submittedAt", serialize_with = "iso8601_option::serialize")]
+    pub submitted_at: Option<time::OffsetDateTime>,
+    #[serde(rename = "gradedAt", serialize_with = "iso8601_option::serialize")]
+    pub graded_at: Option<time::OffsetDateTime>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct ChallengeSubmissionLeaderboardEntry {
+    pub challenge_id: i32,
+    pub user_id: Uuid,
+    pub full_name: String,
+    pub image: Option<String>,
+    pub points_awarded: i32,
+    pub score: Option<f64>,
+    pub max_score: Option<f64>,
+    pub status: String,
+    pub graded_at: Option<time::OffsetDateTime>,
+    pub challenge_rank: i64,
+}
+
+// Admin JupyterHub access response
+#[derive(Debug, Serialize)]
+pub struct AdminJupyterHubAccessResponse {
+    pub success: bool,
+    #[serde(rename = "jupyterhubUrl")]
+    pub jupyterhub_url: String,
+    pub token: String,
+    pub message: String,
+}
+
+// Response for syncing notebook to nbgrader
+#[derive(Debug, Serialize)]
+pub struct AdminSyncNotebookResponse {
+    pub success: bool,
+    pub message: String,
 }
