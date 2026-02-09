@@ -29,3 +29,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.iml
+
+
+.env.local
+.env.production

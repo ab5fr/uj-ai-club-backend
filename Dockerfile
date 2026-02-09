@@ -5,6 +5,7 @@ WORKDIR /app
 COPY Cargo.toml ./
 
 COPY src ./src
+COPY migrations ./migrations
 
 RUN cargo build --release
 
@@ -19,9 +20,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/uj-ai-club-backend /app/uj-ai-club-backend
-
-# Create uploads directory
-RUN mkdir -p /app/uploads/avatars
 
 EXPOSE 8000
 

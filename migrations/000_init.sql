@@ -1,7 +1,5 @@
--- Combined migration file (ordered)
-
 -- 1) Base schema
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
@@ -17,13 +15,13 @@ CREATE TABLE users (
 ALTER TABLE users
 ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'));
 
-CREATE TABLE leaderboards (
+CREATE TABLE IF NOT EXISTS leaderboards (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE leaderboard_entries (
+CREATE TABLE IF NOT EXISTS leaderboard_entries (
     id SERIAL PRIMARY KEY,
     leaderboard_id INTEGER NOT NULL REFERENCES leaderboards(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -31,7 +29,7 @@ CREATE TABLE leaderboard_entries (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE resources (
+CREATE TABLE IF NOT EXISTS resources (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     provider VARCHAR(255) NOT NULL,
@@ -44,7 +42,7 @@ CREATE TABLE resources (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE challenges (
+CREATE TABLE IF NOT EXISTS challenges (
     id SERIAL PRIMARY KEY,
     week INTEGER NOT NULL,
     title VARCHAR(255) NOT NULL,
@@ -58,7 +56,7 @@ CREATE TABLE challenges (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE challenge_leaderboard (
+CREATE TABLE IF NOT EXISTS challenge_leaderboard (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     points INTEGER NOT NULL DEFAULT 0,
@@ -66,7 +64,7 @@ CREATE TABLE challenge_leaderboard (
     UNIQUE(user_id)
 );
 
-CREATE TABLE user_stats (
+CREATE TABLE IF NOT EXISTS user_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     best_subject VARCHAR(255),
@@ -78,7 +76,7 @@ CREATE TABLE user_stats (
     UNIQUE(user_id)
 );
 
-CREATE TABLE contact_messages (
+CREATE TABLE IF NOT EXISTS contact_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -86,7 +84,7 @@ CREATE TABLE contact_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE quotes (
+CREATE TABLE IF NOT EXISTS quotes (
     id SERIAL PRIMARY KEY,
     text TEXT NOT NULL,
     author TEXT NOT NULL,
@@ -120,7 +118,7 @@ CREATE INDEX idx_users_google_id ON users(google_id);
 UPDATE users SET university_major_set = FALSE WHERE university IS NULL OR major IS NULL;
 
 -- 3) JupyterHub/nbgrader integration
-CREATE TABLE challenge_notebooks (
+CREATE TABLE IF NOT EXISTS challenge_notebooks (
     id SERIAL PRIMARY KEY,
     challenge_id INTEGER NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
     assignment_name VARCHAR(255) NOT NULL UNIQUE,
@@ -136,7 +134,7 @@ CREATE TABLE challenge_notebooks (
     CONSTRAINT unique_challenge_notebook UNIQUE(challenge_id)
 );
 
-CREATE TABLE challenge_submissions (
+CREATE TABLE IF NOT EXISTS challenge_submissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     challenge_id INTEGER NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
@@ -208,17 +206,14 @@ JOIN users u ON cs.user_id = u.id
 WHERE cs.status = 'graded' AND cs.points_awarded > 0
 ORDER BY cs.challenge_id, cs.points_awarded DESC;
 
--- 4) Require password for Google users (no schema changes)
--- This section intentionally has no SQL statements.
-
 -- 5) Set admin user
-INSERT INTO users (id, email, password_hash, role)
-VALUES (
-    gen_random_uuid(),
-    'a2005balila@gmail.com',
-    '$2b$12$rjvnyy3C5AEt4apM53VzEeZnKMUVmW7FP44rb1Xdxmw1ozPUZFM46',
-    'admin'
-)
-ON CONFLICT (email) DO UPDATE
-SET password_hash = EXCLUDED.password_hash,
-    role = EXCLUDED.role;
+-- INSERT INTO users (id, email, password_hash, role)
+-- VALUES (
+--     gen_random_uuid(),
+--     'a2005balila@gmail.com',
+--     '$2b$12$rjvnyy3C5AEt4apM53VzEeZnKMUVmW7FP44rb1Xdxmw1ozPUZFM46',
+--     'admin'
+-- )
+-- ON CONFLICT (email) DO UPDATE
+-- SET password_hash = EXCLUDED.password_hash,
+--     role = EXCLUDED.role;

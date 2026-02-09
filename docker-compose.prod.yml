@@ -1,0 +1,100 @@
+services:
+  api-1:
+    build:
+      context: .
+    env_file: .env.production
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - proxy
+      - internal
+    restart: unless-stopped
+
+  api-2:
+    build:
+      context: .
+    env_file: .env.production
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - proxy
+      - internal
+    restart: unless-stopped
+
+  api-3:
+    build:
+      context: .
+    env_file: .env.production
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - proxy
+      - internal
+    restart: unless-stopped
+
+  jupyterhub:
+    build:
+      context: ./jupyterhub
+    env_file: .env.production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - nbgrader_exchange:/srv/nbgrader/exchange
+      - jupyterhub_data:/data
+    networks:
+      - proxy
+      - internal
+    restart: unless-stopped
+
+  grading:
+    build:
+      context: ./jupyterhub
+      dockerfile: Dockerfile.grading
+    env_file: .env.production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - uploads_data:/srv/notebooks
+      - nbgrader_exchange:/srv/nbgrader/exchange
+      - nbgrader_course:/srv/nbgrader/course
+      - nbgrader_data:/data
+    networks:
+      - internal
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.25
+    volumes:
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./infra/certbot/www:/var/www/certbot
+      - ./infra/certbot/conf:/etc/letsencrypt
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - api-1
+      - api-2
+      - api-3
+      - jupyterhub
+    networks:
+      - proxy
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - ./infra/certbot/www:/var/www/certbot
+      - ./infra/certbot/conf:/etc/letsencrypt
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h; done"
+    restart: unless-stopped
+
+volumes:
+  uploads_data:
+  nbgrader_exchange:
+  nbgrader_course:
+  nbgrader_data:
+  jupyterhub_data:
+
+networks:
+  proxy:
+  internal:
+    name: internal
+    internal: true
