@@ -8,7 +8,7 @@ default-run = "uj-ai-club-backend"
 tokio = { version = "*", features = ["full"] }
 axum = { version = "0.7", features = ["macros", "multipart"] }
 tower-http = { version = "*", features = ["cors", "fs"] }
-sqlx = { version = "*", features = ["runtime-tokio-rustls", "postgres", "time", "uuid"] }
+sqlx = { version = "*", features = ["runtime-tokio-rustls", "postgres", "time", "uuid", "migrate"] }
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 jsonwebtoken = { version = "*", features = ["rust_crypto"] }

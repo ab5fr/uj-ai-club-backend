@@ -24,6 +24,8 @@ async fn main() -> anyhow::Result<()> {
         .connect(&database_url)
         .await?;
 
+    sqlx::migrate!().run(&pool).await?;
+
     let app = create_app(pool);
 
     let addr: SocketAddr = server_addr.parse()?;

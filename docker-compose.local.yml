@@ -1,0 +1,54 @@
+services:
+  api:
+    build:
+      context: .
+    env_file: .env.local
+    volumes:
+      - uploads_data:/app/uploads
+    ports:
+      - "8000:8000"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  jupyterhub:
+    build:
+      context: ./jupyterhub
+    env_file: .env.local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - nbgrader_exchange:/srv/nbgrader/exchange
+      - jupyterhub_data:/data
+    ports:
+      - "8888:8000"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  grading:
+    build:
+      context: ./jupyterhub
+      dockerfile: Dockerfile.grading
+    env_file: .env.local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - uploads_data:/srv/notebooks
+      - nbgrader_exchange:/srv/nbgrader/exchange
+      - nbgrader_course:/srv/nbgrader/course
+      - nbgrader_data:/data
+    ports:
+      - "9100:9100"
+    networks:
+      - internal
+    restart: unless-stopped
+
+volumes:
+  uploads_data:
+  nbgrader_exchange:
+  nbgrader_course:
+  nbgrader_data:
+  jupyterhub_data:
+
+networks:
+  internal:
+    name: internal
