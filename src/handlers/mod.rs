@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod auth;
+pub mod certificates;
 pub mod challenges;
 pub mod create_contact;
 pub mod get_leaderboards;
@@ -9,13 +10,15 @@ pub mod users;
 pub mod webhooks;
 
 pub use admin::{
-    admin_create_challenge, admin_create_notebook_multipart, admin_create_resource,
-    admin_create_resource_multipart, admin_delete_challenge, admin_delete_notebook,
-    admin_delete_resource, admin_get_challenge_by_id, admin_get_challenges,
-    admin_get_notebook_by_challenge, admin_get_notebook_edit_url, admin_get_notebooks,
-    admin_get_resource_by_id, admin_get_resources, admin_get_submissions,
-    admin_patch_challenge_visibility, admin_patch_resource_visibility,
-    admin_sync_notebook_to_nbgrader, admin_update_challenge, admin_update_notebook,
+    admin_create_certificate, admin_create_certificate_multipart, admin_create_challenge,
+    admin_create_notebook_multipart, admin_create_resource, admin_create_resource_multipart,
+    admin_delete_certificate, admin_delete_challenge, admin_delete_notebook, admin_delete_resource,
+    admin_get_certificate_by_id, admin_get_certificates, admin_get_challenge_by_id,
+    admin_get_challenges, admin_get_notebook_by_challenge, admin_get_notebook_edit_url,
+    admin_get_notebooks, admin_get_resource_by_id, admin_get_resources, admin_get_submissions,
+    admin_patch_certificate_visibility, admin_patch_challenge_visibility,
+    admin_patch_resource_visibility, admin_sync_notebook_to_nbgrader, admin_update_certificate,
+    admin_update_certificate_multipart, admin_update_challenge, admin_update_notebook,
     admin_update_resource, admin_update_resource_multipart,
 };
 pub use auth::complete_profile::complete_profile;
@@ -23,6 +26,8 @@ pub use auth::google_auth_callback::google_auth_callback;
 pub use auth::google_auth_init::google_auth_init;
 pub use auth::login::login;
 pub use auth::signup::signup;
+pub use certificates::get_certificate_by_id::get_certificate_by_id;
+pub use certificates::get_certificates::get_certificates;
 pub use challenges::get_challenge_leaderboard::get_challenge_leaderboard;
 pub use challenges::get_challenge_submission_leaderboard::get_challenge_submission_leaderboard;
 pub use challenges::get_challenges_with_notebooks::get_challenges_with_notebooks;

@@ -24,13 +24,11 @@ async fn main() -> anyhow::Result<()> {
         .connect(&database_url)
         .await?;
 
-    sqlx::migrate!().run(&pool).await?;
-
     let app = create_app(pool);
 
     let addr: SocketAddr = server_addr.parse()?;
 
-    tracing::info!("Starting server on {}", addr);
+    tracing::info!("Starting server on {}", addr); // test push
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

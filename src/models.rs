@@ -147,6 +147,21 @@ pub struct Quote {
     pub updated_at: time::OffsetDateTime,
 }
 
+#[derive(Debug, Serialize, FromRow)]
+pub struct Certificate {
+    pub id: i32,
+    pub level: String,
+    pub title: String,
+    pub cover_image: Option<String>,
+    pub first_name: String,
+    pub second_name: String,
+    pub coursera_url: Option<String>,
+    pub youtube_url: Option<String>,
+    pub visible: bool,
+    pub created_at: time::OffsetDateTime,
+    pub updated_at: time::OffsetDateTime,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ResourceListResponse {
     pub id: i32,
@@ -165,6 +180,37 @@ pub struct ResourceDetailResponse {
     #[serde(rename = "notionUrl")]
     pub notion_url: Option<String>,
     pub instructor: InstructorResponse,
+    pub quote: Option<QuoteResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CertificateListResponse {
+    pub id: i32,
+    pub level: String,
+    pub title: String,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<String>,
+    #[serde(rename = "firstName")]
+    pub first_name: String,
+    #[serde(rename = "secondName")]
+    pub second_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CertificateDetailResponse {
+    pub id: i32,
+    pub level: String,
+    pub title: String,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<String>,
+    #[serde(rename = "firstName")]
+    pub first_name: String,
+    #[serde(rename = "secondName")]
+    pub second_name: String,
+    #[serde(rename = "courseraUrl")]
+    pub coursera_url: Option<String>,
+    #[serde(rename = "youtubeUrl")]
+    pub youtube_url: Option<String>,
     pub quote: Option<QuoteResponse>,
 }
 
@@ -277,6 +323,28 @@ pub struct AdminResourceResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct AdminCertificateResponse {
+    pub id: i32,
+    pub level: String,
+    pub title: String,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<String>,
+    #[serde(rename = "firstName")]
+    pub first_name: String,
+    #[serde(rename = "secondName")]
+    pub second_name: String,
+    #[serde(rename = "courseraUrl")]
+    pub coursera_url: Option<String>,
+    #[serde(rename = "youtubeUrl")]
+    pub youtube_url: Option<String>,
+    pub visible: bool,
+    #[serde(rename = "createdAt")]
+    pub created_at: time::OffsetDateTime,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AdminInstructorResponse {
     pub name: String,
     pub image: Option<String>,
@@ -302,6 +370,23 @@ pub struct AdminCreateResourceRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AdminCreateCertificateRequest {
+    pub level: String,
+    pub title: String,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<String>,
+    #[serde(rename = "firstName")]
+    pub first_name: String,
+    #[serde(rename = "secondName")]
+    pub second_name: String,
+    #[serde(rename = "courseraUrl")]
+    pub coursera_url: Option<String>,
+    #[serde(rename = "youtubeUrl")]
+    pub youtube_url: Option<String>,
+    pub visible: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AdminUpdateResourceRequest {
     pub title: Option<String>,
     pub provider: Option<String>,
@@ -311,6 +396,23 @@ pub struct AdminUpdateResourceRequest {
     pub notion_url: Option<String>,
     pub instructor: Option<AdminInstructorRequest>,
     pub quote: Option<AdminQuoteRequest>,
+    pub visible: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdminUpdateCertificateRequest {
+    pub level: Option<String>,
+    pub title: Option<String>,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<String>,
+    #[serde(rename = "firstName")]
+    pub first_name: Option<String>,
+    #[serde(rename = "secondName")]
+    pub second_name: Option<String>,
+    #[serde(rename = "courseraUrl")]
+    pub coursera_url: Option<String>,
+    #[serde(rename = "youtubeUrl")]
+    pub youtube_url: Option<String>,
     pub visible: Option<bool>,
 }
 
