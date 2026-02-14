@@ -1,3 +1,4 @@
+mod normalize_youtube_url;
 mod save_uploaded_file;
 
 pub mod admin_create_certificate;

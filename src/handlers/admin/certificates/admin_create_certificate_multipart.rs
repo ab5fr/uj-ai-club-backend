@@ -1,12 +1,8 @@
 use axum::{Json, extract::State};
 
-use crate::{
-    AppState,
-    auth::AdminUser,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::AdminUser, error::AppError, models::*};
 
+use super::normalize_youtube_url::normalize_youtube_url;
 use super::save_uploaded_file::save_uploaded_file;
 
 pub async fn admin_create_certificate_multipart(
@@ -80,7 +76,7 @@ pub async fn admin_create_certificate_multipart(
                     .await
                     .map_err(|e| AppError::InternalError(e.into()))?;
                 if !text.is_empty() {
-                    youtube_url = Some(text);
+                    youtube_url = Some(normalize_youtube_url(&text));
                 }
             }
             "visible" => {

@@ -10,6 +10,7 @@ use crate::{
     models::*,
 };
 
+use super::normalize_youtube_url::normalize_youtube_url;
 use super::save_uploaded_file::save_uploaded_file;
 
 pub async fn admin_update_certificate_multipart(
@@ -87,7 +88,11 @@ pub async fn admin_update_certificate_multipart(
                     .text()
                     .await
                     .map_err(|e| AppError::InternalError(e.into()))?;
-                youtube_url = Some(if text.is_empty() { None } else { Some(text) });
+                youtube_url = Some(if text.is_empty() {
+                    None
+                } else {
+                    Some(normalize_youtube_url(&text))
+                });
             }
             "visible" => {
                 let text = field

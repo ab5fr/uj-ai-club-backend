@@ -1,11 +1,8 @@
 use axum::{Json, extract::State};
 
-use crate::{
-    AppState,
-    auth::AdminUser,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::AdminUser, error::AppError, models::*};
+
+use super::normalize_youtube_url::normalize_youtube_url;
 
 pub async fn admin_create_certificate(
     _auth: AdminUser,
@@ -13,6 +10,7 @@ pub async fn admin_create_certificate(
     Json(req): Json<AdminCreateCertificateRequest>,
 ) -> Result<Json<AdminItemResponse<AdminCertificateResponse>>, AppError> {
     let visible = req.visible.unwrap_or(true);
+    let youtube_url = req.youtube_url.map(|url| normalize_youtube_url(&url));
 
     let certificate: Certificate = sqlx::query_as(
         r#"
@@ -27,7 +25,7 @@ pub async fn admin_create_certificate(
     .bind(&req.first_name)
     .bind(&req.second_name)
     .bind(&req.coursera_url)
-    .bind(&req.youtube_url)
+    .bind(&youtube_url)
     .bind(visible)
     .fetch_one(&state.pool)
     .await?;

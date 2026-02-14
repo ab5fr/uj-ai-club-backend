@@ -3,12 +3,9 @@ use axum::{
     extract::{Path, State},
 };
 
-use crate::{
-    AppState,
-    auth::AdminUser,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::AdminUser, error::AppError, models::*};
+
+use super::normalize_youtube_url::normalize_youtube_url;
 
 pub async fn admin_update_certificate(
     _auth: AdminUser,
@@ -28,7 +25,10 @@ pub async fn admin_update_certificate(
     let first_name = req.first_name.unwrap_or(existing.first_name);
     let second_name = req.second_name.unwrap_or(existing.second_name);
     let coursera_url = req.coursera_url.or(existing.coursera_url);
-    let youtube_url = req.youtube_url.or(existing.youtube_url);
+    let youtube_url = req
+        .youtube_url
+        .map(|url| normalize_youtube_url(&url))
+        .or(existing.youtube_url);
     let visible = req.visible.unwrap_or(existing.visible);
 
     let certificate: Certificate = sqlx::query_as(
