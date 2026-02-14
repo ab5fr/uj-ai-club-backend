@@ -1,41 +1,52 @@
 services:
   api-1:
-    build:
-      context: .
-    env_file: .env.production
+    image: ${API_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-api:latest}
+    env_file: .env
     volumes:
       - uploads_data:/app/uploads
     networks:
-      - proxy
-      - internal
+      proxy: {}
+      internal:
+        aliases:
+          - backend
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
   api-2:
-    build:
-      context: .
-    env_file: .env.production
+    image: ${API_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-api:latest}
+    env_file: .env
     volumes:
       - uploads_data:/app/uploads
     networks:
-      - proxy
-      - internal
+      proxy: {}
+      internal:
+        aliases:
+          - backend
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
   api-3:
-    build:
-      context: .
-    env_file: .env.production
+    image: ${API_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-api:latest}
+    env_file: .env
     volumes:
       - uploads_data:/app/uploads
     networks:
-      - proxy
-      - internal
+      proxy: {}
+      internal:
+        aliases:
+          - backend
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
   jupyterhub:
-    build:
-      context: ./jupyterhub
-    env_file: .env.production
+    image: ${JUPYTERHUB_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-jupyterhub:latest}
+    env_file: .env
+    environment:
+      - DOCKER_NETWORK_NAME=internal
+      - JUPYTERHUB_HUB_CONNECT_IP=jupyterhub
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - nbgrader_exchange:/srv/nbgrader/exchange
@@ -43,13 +54,13 @@ services:
     networks:
       - proxy
       - internal
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
   grading:
-    build:
-      context: ./jupyterhub
-      dockerfile: Dockerfile.grading
-    env_file: .env.production
+    image: ${GRADING_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-grading:latest}
+    env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - uploads_data:/srv/notebooks
@@ -58,10 +69,12 @@ services:
       - nbgrader_data:/data
     networks:
       - internal
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
   nginx:
-    image: nginx:1.25
+    image: nginx:latest
     volumes:
       - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
       - ./infra/certbot/www:/var/www/certbot
@@ -76,6 +89,8 @@ services:
       - jupyterhub
     networks:
       - proxy
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
   certbot:
@@ -84,6 +99,13 @@ services:
       - ./infra/certbot/www:/var/www/certbot
       - ./infra/certbot/conf:/etc/letsencrypt
     entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h; done"
+    restart: unless-stopped
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    command: --label-enable --cleanup --rolling-restart --interval 60
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
 volumes:
