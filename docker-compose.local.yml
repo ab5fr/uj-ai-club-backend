@@ -2,7 +2,7 @@ services:
   api:
     build:
       context: .
-    env_file: .env.local
+    env_file: .env
     volumes:
       - uploads_data:/app/uploads
     ports:
@@ -14,7 +14,7 @@ services:
   jupyterhub:
     build:
       context: ./jupyterhub
-    env_file: .env.local
+    env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - nbgrader_exchange:/srv/nbgrader/exchange
@@ -29,7 +29,7 @@ services:
     build:
       context: ./jupyterhub
       dockerfile: Dockerfile.grading
-    env_file: .env.local
+    env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - uploads_data:/srv/notebooks
