@@ -72,6 +72,8 @@ pub fn create_app(pool: sqlx::PgPool) -> Router {
         .route("/leaderboards", get(handlers::get_leaderboards))
         .route("/resources", get(handlers::get_resources))
         .route("/resources/:id", get(handlers::get_resource_by_id))
+        .route("/certificates", get(handlers::get_certificates))
+        .route("/certificates/:id", get(handlers::get_certificate_by_id))
         .route("/contact", post(handlers::create_contact))
         // Challenges
         .route("/challenges", get(handlers::get_challenges_with_notebooks))
@@ -123,6 +125,28 @@ pub fn create_app(pool: sqlx::PgPool) -> Router {
         .route(
             "/admin/resources/:id/visibility",
             patch(handlers::admin_patch_resource_visibility),
+        )
+        // Admin: certificates
+        .route("/admin/certificates", get(handlers::admin_get_certificates))
+        .route(
+            "/admin/certificates",
+            post(handlers::admin_create_certificate_multipart),
+        )
+        .route(
+            "/admin/certificates/:id",
+            get(handlers::admin_get_certificate_by_id),
+        )
+        .route(
+            "/admin/certificates/:id",
+            put(handlers::admin_update_certificate_multipart),
+        )
+        .route(
+            "/admin/certificates/:id",
+            delete(handlers::admin_delete_certificate),
+        )
+        .route(
+            "/admin/certificates/:id/visibility",
+            patch(handlers::admin_patch_certificate_visibility),
         )
         // Admin: challenges
         .route("/admin/challenges", get(handlers::admin_get_challenges))

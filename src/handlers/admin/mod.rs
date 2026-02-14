@@ -1,3 +1,5 @@
+#[path = "certificates/mod.rs"]
+pub mod certificates;
 #[path = "challenges/mod.rs"]
 pub mod challenges;
 #[path = "notebooks/mod.rs"]
@@ -7,6 +9,11 @@ pub mod resources;
 #[path = "submissions/mod.rs"]
 pub mod submissions;
 
+pub use certificates::{
+    admin_create_certificate, admin_create_certificate_multipart, admin_delete_certificate,
+    admin_get_certificate_by_id, admin_get_certificates, admin_patch_certificate_visibility,
+    admin_update_certificate, admin_update_certificate_multipart,
+};
 pub use challenges::{
     admin_create_challenge, admin_delete_challenge, admin_get_challenge_by_id,
     admin_get_challenges, admin_patch_challenge_visibility, admin_update_challenge,
