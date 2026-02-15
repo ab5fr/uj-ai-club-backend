@@ -14,13 +14,14 @@ pub async fn admin_create_certificate(
 
     let certificate: Certificate = sqlx::query_as(
         r#"
-        INSERT INTO certificates (level, title, cover_image, first_name, second_name, coursera_url, youtube_url, visible, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        INSERT INTO certificates (level, title, course_title, cover_image, first_name, second_name, coursera_url, youtube_url, visible, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
         RETURNING *
         "#,
     )
     .bind(&req.level)
     .bind(&req.title)
+    .bind(&req.course_title)
     .bind(&req.cover_image)
     .bind(&req.first_name)
     .bind(&req.second_name)
@@ -34,6 +35,7 @@ pub async fn admin_create_certificate(
         id: certificate.id,
         level: certificate.level,
         title: certificate.title,
+        course_title: certificate.course_title,
         cover_image: certificate.cover_image,
         first_name: certificate.first_name,
         second_name: certificate.second_name,

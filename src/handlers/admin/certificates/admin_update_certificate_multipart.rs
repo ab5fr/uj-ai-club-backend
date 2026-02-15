@@ -27,6 +27,7 @@ pub async fn admin_update_certificate_multipart(
 
     let mut level: Option<String> = None;
     let mut title: Option<String> = None;
+    let mut course_title: Option<String> = None;
     let mut cover_image: Option<String> = None;
     let mut first_name: Option<String> = None;
     let mut second_name: Option<String> = None;
@@ -57,6 +58,15 @@ pub async fn admin_update_certificate_multipart(
                         .await
                         .map_err(|e| AppError::InternalError(e.into()))?,
                 );
+            }
+            "courseTitle" => {
+                let text = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::InternalError(e.into()))?;
+                if !text.is_empty() {
+                    course_title = Some(text);
+                }
             }
             "firstName" => {
                 let text = field
@@ -119,6 +129,7 @@ pub async fn admin_update_certificate_multipart(
 
     let level = level.unwrap_or(existing.level);
     let title = title.unwrap_or(existing.title);
+    let course_title = course_title.unwrap_or(existing.course_title);
     let cover_image = cover_image.or(existing.cover_image);
     let first_name = first_name.unwrap_or(existing.first_name);
     let second_name = second_name.unwrap_or(existing.second_name);
@@ -129,13 +140,14 @@ pub async fn admin_update_certificate_multipart(
     let certificate: Certificate = sqlx::query_as(
         r#"
         UPDATE certificates
-        SET level = $1, title = $2, cover_image = $3, first_name = $4, second_name = $5, coursera_url = $6, youtube_url = $7, visible = $8, updated_at = NOW()
-        WHERE id = $9
+        SET level = $1, title = $2, course_title = $3, cover_image = $4, first_name = $5, second_name = $6, coursera_url = $7, youtube_url = $8, visible = $9, updated_at = NOW()
+        WHERE id = $10
         RETURNING *
         "#,
     )
     .bind(&level)
     .bind(&title)
+    .bind(&course_title)
     .bind(&cover_image)
     .bind(&first_name)
     .bind(&second_name)
@@ -150,6 +162,7 @@ pub async fn admin_update_certificate_multipart(
         id: certificate.id,
         level: certificate.level,
         title: certificate.title,
+        course_title: certificate.course_title,
         cover_image: certificate.cover_image,
         first_name: certificate.first_name,
         second_name: certificate.second_name,

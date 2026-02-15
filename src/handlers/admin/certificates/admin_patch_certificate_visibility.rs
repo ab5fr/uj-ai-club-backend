@@ -29,6 +29,7 @@ pub async fn admin_patch_certificate_visibility(
         id: certificate.id,
         level: certificate.level,
         title: certificate.title,
+        course_title: certificate.course_title,
         cover_image: certificate.cover_image,
         first_name: certificate.first_name,
         second_name: certificate.second_name,

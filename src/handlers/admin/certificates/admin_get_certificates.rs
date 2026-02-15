@@ -4,12 +4,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{
-    AppState,
-    auth::AdminUser,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::AdminUser, error::AppError, models::*};
 
 #[derive(Deserialize)]
 pub struct AdminCertificateQuery {
@@ -38,6 +33,7 @@ pub async fn admin_get_certificates(
             id: c.id,
             level: c.level,
             title: c.title,
+            course_title: c.course_title,
             cover_image: c.cover_image,
             first_name: c.first_name,
             second_name: c.second_name,

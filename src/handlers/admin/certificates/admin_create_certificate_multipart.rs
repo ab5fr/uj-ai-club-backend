@@ -12,6 +12,7 @@ pub async fn admin_create_certificate_multipart(
 ) -> Result<Json<AdminItemResponse<AdminCertificateResponse>>, AppError> {
     let mut level: Option<String> = None;
     let mut title: Option<String> = None;
+    let mut course_title: Option<String> = None;
     let mut cover_image: Option<String> = None;
     let mut first_name: Option<String> = None;
     let mut second_name: Option<String> = None;
@@ -42,6 +43,15 @@ pub async fn admin_create_certificate_multipart(
                         .await
                         .map_err(|e| AppError::InternalError(e.into()))?,
                 );
+            }
+            "courseTitle" => {
+                let text = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::InternalError(e.into()))?;
+                if !text.is_empty() {
+                    course_title = Some(text);
+                }
             }
             "firstName" => {
                 let text = field
@@ -106,6 +116,9 @@ pub async fn admin_create_certificate_multipart(
         level.ok_or_else(|| AppError::BadRequest("Missing required field: level".to_string()))?;
     let title =
         title.ok_or_else(|| AppError::BadRequest("Missing required field: title".to_string()))?;
+    let course_title = course_title.ok_or_else(|| {
+        AppError::BadRequest("Missing required field: courseTitle".to_string())
+    })?;
     let first_name = first_name
         .ok_or_else(|| AppError::BadRequest("Missing required field: firstName".to_string()))?;
     let second_name = second_name
@@ -113,13 +126,14 @@ pub async fn admin_create_certificate_multipart(
 
     let certificate: Certificate = sqlx::query_as(
         r#"
-        INSERT INTO certificates (level, title, cover_image, first_name, second_name, coursera_url, youtube_url, visible, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        INSERT INTO certificates (level, title, course_title, cover_image, first_name, second_name, coursera_url, youtube_url, visible, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
         RETURNING *
         "#,
     )
     .bind(&level)
     .bind(&title)
+    .bind(&course_title)
     .bind(&cover_image)
     .bind(&first_name)
     .bind(&second_name)
@@ -133,6 +147,7 @@ pub async fn admin_create_certificate_multipart(
         id: certificate.id,
         level: certificate.level,
         title: certificate.title,
+        course_title: certificate.course_title,
         cover_image: certificate.cover_image,
         first_name: certificate.first_name,
         second_name: certificate.second_name,

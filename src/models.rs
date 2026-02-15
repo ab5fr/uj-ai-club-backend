@@ -152,6 +152,7 @@ pub struct Certificate {
     pub id: i32,
     pub level: String,
     pub title: String,
+    pub course_title: String,
     pub cover_image: Option<String>,
     pub first_name: String,
     pub second_name: String,
@@ -201,6 +202,8 @@ pub struct CertificateDetailResponse {
     pub id: i32,
     pub level: String,
     pub title: String,
+    #[serde(rename = "courseTitle")]
+    pub course_title: String,
     #[serde(rename = "coverImage")]
     pub cover_image: Option<String>,
     #[serde(rename = "firstName")]
@@ -327,6 +330,8 @@ pub struct AdminCertificateResponse {
     pub id: i32,
     pub level: String,
     pub title: String,
+    #[serde(rename = "courseTitle")]
+    pub course_title: String,
     #[serde(rename = "coverImage")]
     pub cover_image: Option<String>,
     #[serde(rename = "firstName")]
@@ -373,6 +378,8 @@ pub struct AdminCreateResourceRequest {
 pub struct AdminCreateCertificateRequest {
     pub level: String,
     pub title: String,
+    #[serde(rename = "courseTitle")]
+    pub course_title: String,
     #[serde(rename = "coverImage")]
     pub cover_image: Option<String>,
     #[serde(rename = "firstName")]
@@ -403,6 +410,8 @@ pub struct AdminUpdateResourceRequest {
 pub struct AdminUpdateCertificateRequest {
     pub level: Option<String>,
     pub title: Option<String>,
+    #[serde(rename = "courseTitle")]
+    pub course_title: Option<String>,
     #[serde(rename = "coverImage")]
     pub cover_image: Option<String>,
     #[serde(rename = "firstName")]

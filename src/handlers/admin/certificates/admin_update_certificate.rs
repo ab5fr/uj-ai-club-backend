@@ -21,6 +21,7 @@ pub async fn admin_update_certificate(
 
     let level = req.level.unwrap_or(existing.level);
     let title = req.title.unwrap_or(existing.title);
+    let course_title = req.course_title.unwrap_or(existing.course_title);
     let cover_image = req.cover_image.or(existing.cover_image);
     let first_name = req.first_name.unwrap_or(existing.first_name);
     let second_name = req.second_name.unwrap_or(existing.second_name);
@@ -34,13 +35,14 @@ pub async fn admin_update_certificate(
     let certificate: Certificate = sqlx::query_as(
         r#"
         UPDATE certificates
-        SET level = $1, title = $2, cover_image = $3, first_name = $4, second_name = $5, coursera_url = $6, youtube_url = $7, visible = $8, updated_at = NOW()
-        WHERE id = $9
+        SET level = $1, title = $2, course_title = $3, cover_image = $4, first_name = $5, second_name = $6, coursera_url = $7, youtube_url = $8, visible = $9, updated_at = NOW()
+        WHERE id = $10
         RETURNING *
         "#,
     )
     .bind(&level)
     .bind(&title)
+    .bind(&course_title)
     .bind(&cover_image)
     .bind(&first_name)
     .bind(&second_name)
@@ -55,6 +57,7 @@ pub async fn admin_update_certificate(
         id: certificate.id,
         level: certificate.level,
         title: certificate.title,
+        course_title: certificate.course_title,
         cover_image: certificate.cover_image,
         first_name: certificate.first_name,
         second_name: certificate.second_name,
