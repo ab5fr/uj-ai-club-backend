@@ -4,12 +4,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{
-    AppState,
-    auth::AdminUser,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::AdminUser, error::AppError, models::*};
 
 #[derive(Deserialize)]
 pub struct AdminChallengeQuery {
@@ -38,6 +33,7 @@ pub async fn admin_get_challenges(
             id: c.id,
             title: c.title,
             description: c.description,
+            allowed_submissions: c.allowed_submissions,
             start_date: c.start_date,
             end_date: c.end_date,
             visible: c.visible,

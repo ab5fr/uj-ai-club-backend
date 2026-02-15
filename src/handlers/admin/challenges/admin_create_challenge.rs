@@ -1,11 +1,6 @@
 use axum::{Json, extract::State};
 
-use crate::{
-    AppState,
-    auth::AdminUser,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::AdminUser, error::AppError, models::*};
 
 pub async fn admin_create_challenge(
     _auth: AdminUser,
@@ -15,11 +10,18 @@ pub async fn admin_create_challenge(
     let visible = req.visible.unwrap_or(true);
     let week = req.week.unwrap_or(1);
     let challenge_url = req.challenge_url.unwrap_or_default();
+    let allowed_submissions = req.allowed_submissions.unwrap_or(3);
+
+    if allowed_submissions < 1 {
+        return Err(AppError::BadRequest(
+            "allowedSubmissions must be at least 1".to_string(),
+        ));
+    }
 
     let challenge: Challenge = sqlx::query_as(
         r#"
-        INSERT INTO challenges (title, description, start_date, end_date, visible, week, challenge_url, is_current, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, false, NOW(), NOW())
+        INSERT INTO challenges (title, description, start_date, end_date, visible, week, challenge_url, allowed_submissions, is_current, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, NOW(), NOW())
         RETURNING *
         "#,
     )
@@ -30,6 +32,7 @@ pub async fn admin_create_challenge(
     .bind(visible)
     .bind(week)
     .bind(&challenge_url)
+    .bind(allowed_submissions)
     .fetch_one(&state.pool)
     .await?;
 
@@ -37,6 +40,7 @@ pub async fn admin_create_challenge(
         id: challenge.id,
         title: challenge.title,
         description: challenge.description,
+        allowed_submissions: challenge.allowed_submissions,
         start_date: challenge.start_date,
         end_date: challenge.end_date,
         visible: challenge.visible,

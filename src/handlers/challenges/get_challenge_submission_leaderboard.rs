@@ -18,21 +18,31 @@ pub async fn get_challenge_submission_leaderboard(
 ) -> Result<Json<Vec<ChallengeSubmissionLeaderboardEntry>>, AppError> {
     let entries: Vec<ChallengeSubmissionLeaderboardEntry> = sqlx::query_as(
         r#"
+        WITH ranked_attempts AS (
+            SELECT
+                cs.*,
+                ROW_NUMBER() OVER (
+                    PARTITION BY cs.user_id
+                    ORDER BY cs.points_awarded DESC, cs.graded_at DESC NULLS LAST, cs.created_at DESC
+                ) AS rn
+            FROM challenge_submissions cs
+            WHERE cs.challenge_id = $1 AND cs.status = 'graded' AND cs.points_awarded > 0
+        )
         SELECT 
-            cs.challenge_id,
+            ra.challenge_id,
             u.id as user_id,
             u.full_name,
             u.image,
-            cs.points_awarded,
-            cs.score,
-            cs.max_score,
-            cs.status,
-            cs.graded_at,
-            RANK() OVER (ORDER BY cs.points_awarded DESC) as challenge_rank
-        FROM challenge_submissions cs
-        JOIN users u ON cs.user_id = u.id
-        WHERE cs.challenge_id = $1 AND cs.status = 'graded' AND cs.points_awarded > 0
-        ORDER BY cs.points_awarded DESC
+            ra.points_awarded,
+            ra.score,
+            ra.max_score,
+            ra.status,
+            ra.graded_at,
+            RANK() OVER (ORDER BY ra.points_awarded DESC) as challenge_rank
+        FROM ranked_attempts ra
+        JOIN users u ON ra.user_id = u.id
+        WHERE ra.rn = 1
+        ORDER BY ra.points_awarded DESC
         LIMIT 50
         "#,
     )

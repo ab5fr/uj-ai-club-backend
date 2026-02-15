@@ -26,6 +26,8 @@ pub async fn get_challenges_with_notebooks(
     let mut responses = Vec::new();
 
     for challenge in challenges {
+        let allowed_submissions = challenge.allowed_submissions.max(1);
+
         // Check if this challenge has a notebook
         let notebook: Option<ChallengeNotebook> =
             sqlx::query_as("SELECT * FROM challenge_notebooks WHERE challenge_id = $1")
@@ -38,6 +40,7 @@ pub async fn get_challenges_with_notebooks(
             week: challenge.week,
             title: challenge.title,
             description: challenge.description,
+            allowed_submissions,
             has_notebook: notebook.is_some(),
             max_points: notebook.as_ref().map(|n| n.max_points),
             time_limit_minutes: notebook.as_ref().map(|n| n.time_limit_minutes),

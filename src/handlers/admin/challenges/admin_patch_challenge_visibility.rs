@@ -29,6 +29,7 @@ pub async fn admin_patch_challenge_visibility(
         id: challenge.id,
         title: challenge.title,
         description: challenge.description,
+        allowed_submissions: challenge.allowed_submissions,
         start_date: challenge.start_date,
         end_date: challenge.end_date,
         visible: challenge.visible,

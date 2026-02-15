@@ -23,6 +23,7 @@ from custom_authenticator import JWTAuthenticator
 c.JupyterHub.ip = '0.0.0.0'
 c.JupyterHub.port = 8000
 c.JupyterHub.hub_ip = '0.0.0.0'
+c.JupyterHub.hub_connect_ip = os.environ.get('JUPYTERHUB_HUB_CONNECT_IP', 'jupyterhub')
 
 # Use the custom JWT authenticator if JWT_SECRET is set, otherwise use Dummy for dev
 if os.environ.get('JWT_SECRET'):
@@ -50,6 +51,10 @@ c.JupyterHub.spawner_class = 'dockerspawner.DockerSpawner'
 
 # Docker image for student notebooks
 c.DockerSpawner.image = 'ujaiclub/student-notebook:latest'
+
+# Use JupyterHub's single-user server entrypoint explicitly.
+# The image default CMD (start-notebook.sh) does not satisfy Hub spawn health checks.
+c.DockerSpawner.cmd = ['jupyterhub-singleuser']
 
 # Remove containers when they stop
 c.DockerSpawner.remove = True
@@ -107,8 +112,9 @@ c.DockerSpawner.mem_guarantee = '256M'
 
 # Use network name from environment variable (set by docker-compose)
 # For local dev, can use 'bridge' network
-network_name = os.environ.get('DOCKER_NETWORK_NAME', 'bridge')
+network_name = os.environ.get('DOCKER_NETWORK_NAME', 'internal')
 c.DockerSpawner.network_name = network_name
+c.DockerSpawner.use_internal_ip = True
 
 # Don't use extra_host_config network_mode as it conflicts with network_name
 c.DockerSpawner.extra_host_config = {}
@@ -137,7 +143,7 @@ c.JupyterHub.implicit_spawn_seconds = 0.5
 
 # Timeout for spawning (seconds)
 c.Spawner.start_timeout = 120
-c.Spawner.http_timeout = 60
+c.Spawner.http_timeout = 120
 
 # Idle culling - shut down inactive servers
 c.JupyterHub.services = [
@@ -158,6 +164,7 @@ c.JupyterHub.services = [
         'command': [
             'jupyter', 'notebook',
             '--no-browser',
+            '--allow-root',
             '--ip=127.0.0.1',
             '--port=9000',
             '--NotebookApp.base_url=/services/formgrader/',
@@ -223,9 +230,17 @@ def pre_spawn_hook(spawner):
     username = spawner.user.name
     spawner.log.info(f"Pre-spawn hook for user: {username}")
     
-    # Use a custom command that copies and processes notebooks before starting Jupyter
-    # The uploads volume is mounted at /srv/notebooks, and notebooks are in the 'notebooks' subdirectory
-    spawner.cmd = [
+    # IMPORTANT:
+    # Overriding the single-user command can break JupyterHub health checks and OAuth flow.
+    # Keep legacy behavior opt-in only; default is to use DockerSpawner's standard
+    # jupyterhub-singleuser entrypoint.
+    use_legacy_prespawn_cmd = os.environ.get('JUPYTERHUB_USE_LEGACY_PRESPAWN_CMD', 'false').lower() == 'true'
+
+    if use_legacy_prespawn_cmd:
+        spawner.log.warning('JUPYTERHUB_USE_LEGACY_PRESPAWN_CMD=true: using legacy custom start command')
+        # Use a custom command that copies and processes notebooks before starting Jupyter
+        # The uploads volume is mounted at /srv/notebooks, and notebooks are in the 'notebooks' subdirectory
+        spawner.cmd = [
         '/bin/bash', '-c',
         '''
         # Python script to process notebooks (remove solutions and hidden tests)
@@ -359,7 +374,9 @@ PYTHON_SCRIPT
         # Start Jupyter
         exec start-notebook.sh --ServerApp.token=''
         '''
-    ]
+        ]
+    else:
+        spawner.log.info('Using default jupyterhub-singleuser command for reliable spawn')
 
 async def post_spawn_hook(spawner):
     """

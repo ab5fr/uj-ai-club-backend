@@ -25,6 +25,7 @@ pub async fn admin_get_challenge_by_id(
         id: challenge.id,
         title: challenge.title,
         description: challenge.description,
+        allowed_submissions: challenge.allowed_submissions,
         start_date: challenge.start_date,
         end_date: challenge.end_date,
         visible: challenge.visible,

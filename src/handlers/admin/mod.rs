@@ -28,4 +28,7 @@ pub use resources::{
     admin_get_resource_by_id, admin_get_resources, admin_patch_resource_visibility,
     admin_update_resource, admin_update_resource_multipart,
 };
-pub use submissions::admin_get_submissions;
+pub use submissions::{
+    admin_get_submission_access, admin_get_submission_file, admin_get_submissions,
+    admin_grade_submission,
+};

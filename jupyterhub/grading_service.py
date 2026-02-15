@@ -14,7 +14,7 @@ import shutil
 import requests
 import threading
 from pathlib import Path
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -689,6 +689,41 @@ def trigger_grading(student_id, assignment_name):
         'success': True,
         'message': 'Grading started'
     })
+
+
+@app.route('/submissions/<student_id>/<assignment_name>/notebook', methods=['GET'])
+def get_submitted_notebook(student_id, assignment_name):
+    """
+    Return the latest submitted notebook file for a student/assignment.
+
+    Query params:
+      - download=1 to force attachment download
+    """
+    submission_dir = Path('/srv/nbgrader/course') / 'submitted' / student_id / assignment_name
+
+    if not submission_dir.exists():
+        return jsonify({
+            'success': False,
+            'error': 'Submission not found'
+        }), 404
+
+    notebooks = list(submission_dir.glob('*.ipynb'))
+    if not notebooks:
+        return jsonify({
+            'success': False,
+            'error': 'No notebook found in submission'
+        }), 404
+
+    latest_notebook = max(notebooks, key=lambda p: p.stat().st_mtime)
+    as_attachment = str(request.args.get('download', '0')).lower() in ('1', 'true', 'yes')
+
+    return send_file(
+        latest_notebook,
+        mimetype='application/x-ipynb+json',
+        as_attachment=as_attachment,
+        download_name=latest_notebook.name,
+        conditional=True,
+    )
 
 
 @app.route('/setup-assignment/<assignment_name>', methods=['POST'])

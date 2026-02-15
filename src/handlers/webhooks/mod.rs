@@ -1,2 +1,2 @@
 pub mod nbgrader_grade_webhook;
-mod update_user_ranks;
+pub mod update_user_ranks;

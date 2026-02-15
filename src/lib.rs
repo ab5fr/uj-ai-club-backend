@@ -192,6 +192,18 @@ pub fn create_app(pool: sqlx::PgPool) -> Router {
         )
         // Admin: submissions
         .route("/admin/submissions", get(handlers::admin_get_submissions))
+        .route(
+            "/admin/submissions/:id/access",
+            get(handlers::admin_get_submission_access),
+        )
+        .route(
+            "/admin/submissions/:id/file",
+            get(handlers::admin_get_submission_file),
+        )
+        .route(
+            "/admin/submissions/:id/grade",
+            post(handlers::admin_grade_submission),
+        )
         // Static
         .nest_service("/uploads", ServeDir::new("uploads"))
         .layer(cors)

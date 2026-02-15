@@ -17,24 +17,13 @@ pub async fn submit_challenge(
     State(state): State<AppState>,
     Path(challenge_id): Path<i32>,
 ) -> Result<Json<SubmitChallengeResponse>, AppError> {
-    // Get the user's submission
-    let submission: ChallengeSubmission = sqlx::query_as(
-        "SELECT * FROM challenge_submissions WHERE user_id = $1 AND challenge_id = $2",
-    )
-    .bind(auth.user_id)
-    .bind(challenge_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| AppError::BadRequest("You haven't started this challenge yet".to_string()))?;
+    let challenge: Challenge = sqlx::query_as("SELECT * FROM challenges WHERE id = $1")
+        .bind(challenge_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
-    // Check if already graded
-    if submission.status == "graded" {
-        return Ok(Json(SubmitChallengeResponse {
-            success: true,
-            message: "Challenge already graded".to_string(),
-            status: "graded".to_string(),
-        }));
-    }
+    let allowed_submissions = challenge.allowed_submissions.max(1);
 
     // Get the notebook info
     let notebook: ChallengeNotebook =
@@ -46,6 +35,64 @@ pub async fn submit_challenge(
                 AppError::BadRequest("This challenge does not have a notebook".to_string())
             })?;
 
+    let attempts_used: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM challenge_submissions WHERE user_id = $1 AND challenge_id = $2",
+    )
+    .bind(auth.user_id)
+    .bind(challenge_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let attempts_remaining = (allowed_submissions as i64 - attempts_used).max(0);
+
+    // Get latest in-progress attempt
+    let submission: Option<ChallengeSubmission> = sqlx::query_as(
+        r#"
+        SELECT * FROM challenge_submissions
+        WHERE user_id = $1 AND challenge_id = $2 AND status = 'in_progress'
+        ORDER BY attempt_number DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(auth.user_id)
+    .bind(challenge_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let submission = if let Some(submission) = submission {
+        submission
+    } else {
+        let latest_submission: Option<ChallengeSubmission> = sqlx::query_as(
+            r#"
+            SELECT * FROM challenge_submissions
+            WHERE user_id = $1 AND challenge_id = $2
+            ORDER BY attempt_number DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(auth.user_id)
+        .bind(challenge_id)
+        .fetch_optional(&state.pool)
+        .await?;
+
+        if let Some(latest) = latest_submission {
+            if latest.status == "grading_pending" {
+                return Ok(Json(SubmitChallengeResponse {
+                    success: true,
+                    message: "Your submission is pending manual grading by an admin.".to_string(),
+                    status: "grading_pending".to_string(),
+                    attempt_number: latest.attempt_number,
+                    attempts_used,
+                    attempts_remaining,
+                }));
+            }
+        }
+
+        return Err(AppError::BadRequest(
+            "No in-progress attempt found. Start the challenge before submitting.".to_string(),
+        ));
+    };
+
     // Get the user's JupyterHub username
     let user: User = sqlx::query_as("SELECT * FROM users WHERE id = $1")
         .bind(auth.user_id)
@@ -56,20 +103,20 @@ pub async fn submit_challenge(
         .jupyterhub_username
         .ok_or_else(|| AppError::BadRequest("JupyterHub username not set".to_string()))?;
 
-    // Update submission status to "submitted"
+    // Update submission status to "grading_pending"
     sqlx::query(
         r#"
-        UPDATE challenge_submissions 
-        SET status = 'submitted', 
+        UPDATE challenge_submissions
+        SET status = 'grading_pending',
             submitted_at = NOW(),
             updated_at = NOW()
-        WHERE user_id = $1 AND challenge_id = $2
+        WHERE id = $1
         "#,
     )
-    .bind(auth.user_id)
-    .bind(challenge_id)
+    .bind(submission.id)
     .execute(&state.pool)
-    .await?;
+    .await?
+    ;
 
     // Call JupyterHub API to trigger submission/grading
     // The grading service will watch for the submission and grade it
@@ -111,7 +158,10 @@ pub async fn submit_challenge(
 
     Ok(Json(SubmitChallengeResponse {
         success: true,
-        message: "Challenge submitted! Grading will begin shortly.".to_string(),
-        status: "submitted".to_string(),
+        message: "Submission received and marked as grading pending. An admin will review it manually.".to_string(),
+        status: "grading_pending".to_string(),
+        attempt_number: submission.attempt_number,
+        attempts_used,
+        attempts_remaining,
     }))
 }

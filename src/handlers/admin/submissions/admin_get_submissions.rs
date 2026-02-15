@@ -20,6 +20,9 @@ pub async fn admin_get_submissions(
         user_email: String,
         challenge_id: i32,
         challenge_title: String,
+        allowed_submissions: i32,
+        attempt_number: i32,
+        attempts_used: i64,
         status: String,
         score: Option<f64>,
         max_score: Option<f64>,
@@ -34,7 +37,9 @@ pub async fn admin_get_submissions(
         r#"
         SELECT 
             cs.id, cs.user_id, u.full_name as user_name, u.email as user_email,
-            cs.challenge_id, c.title as challenge_title,
+            cs.challenge_id, c.title as challenge_title, c.allowed_submissions,
+            cs.attempt_number,
+            COUNT(*) OVER (PARTITION BY cs.user_id, cs.challenge_id) AS attempts_used,
             cs.status, cs.score, cs.max_score, cs.points_awarded, cs.points_credited,
             cs.started_at, cs.submitted_at, cs.graded_at
         FROM challenge_submissions cs
@@ -48,21 +53,29 @@ pub async fn admin_get_submissions(
 
     let responses: Vec<AdminSubmissionResponse> = submissions
         .into_iter()
-        .map(|s| AdminSubmissionResponse {
-            id: s.id,
-            user_id: s.user_id,
-            user_name: s.user_name,
-            user_email: s.user_email,
-            challenge_id: s.challenge_id,
-            challenge_title: s.challenge_title,
-            status: s.status,
-            score: s.score,
-            max_score: s.max_score,
-            points_awarded: s.points_awarded,
-            points_credited: s.points_credited,
-            started_at: s.started_at,
-            submitted_at: s.submitted_at,
-            graded_at: s.graded_at,
+        .map(|s| {
+            let allowed_submissions = s.allowed_submissions.max(1);
+
+            AdminSubmissionResponse {
+                id: s.id,
+                user_id: s.user_id,
+                user_name: s.user_name,
+                user_email: s.user_email,
+                challenge_id: s.challenge_id,
+                challenge_title: s.challenge_title,
+                allowed_submissions,
+                attempt_number: s.attempt_number,
+                attempts_used: s.attempts_used,
+                attempts_remaining: (allowed_submissions as i64 - s.attempts_used).max(0),
+                status: s.status,
+                score: s.score,
+                max_score: s.max_score,
+                points_awarded: s.points_awarded,
+                points_credited: s.points_credited,
+                started_at: s.started_at,
+                submitted_at: s.submitted_at,
+                graded_at: s.graded_at,
+            }
         })
         .collect();
 

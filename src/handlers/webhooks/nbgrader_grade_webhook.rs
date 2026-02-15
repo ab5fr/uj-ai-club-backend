@@ -2,8 +2,6 @@ use axum::{Json, extract::State};
 
 use crate::{AppState, error::AppError, models::*};
 
-use super::update_user_ranks::update_user_ranks;
-
 /// Webhook endpoint for nbgrader to report grades
 pub async fn nbgrader_grade_webhook(
     State(state): State<AppState>,
@@ -32,33 +30,29 @@ pub async fn nbgrader_grade_webhook(
         .await?
         .ok_or_else(|| AppError::NotFound)?;
 
-    // Calculate points to award (proportional to max_points)
-    let score_percentage = if payload.max_score > 0.0 {
-        payload.score / payload.max_score
-    } else {
-        0.0
-    };
-    let points_awarded = (score_percentage * notebook.max_points as f64).round() as i32;
-
-    // Update the submission
-    let submission: ChallengeSubmission = sqlx::query_as(
+    // Update latest in-progress or pending submission metadata; keep it pending for manual grading
+    let _submission: ChallengeSubmission = sqlx::query_as(
         r#"
-        UPDATE challenge_submissions 
-        SET status = 'graded', 
+        UPDATE challenge_submissions
+        SET status = 'grading_pending',
             score = $1, 
             max_score = $2, 
-            points_awarded = $3,
             nbgrader_submission_id = $4,
             submitted_at = COALESCE(submitted_at, NOW()),
-            graded_at = NOW(),
             updated_at = NOW()
-        WHERE user_id = $5 AND challenge_id = $6
+        WHERE id = (
+            SELECT id
+            FROM challenge_submissions
+            WHERE user_id = $5 AND challenge_id = $6
+              AND status IN ('in_progress', 'grading_pending')
+            ORDER BY attempt_number DESC
+            LIMIT 1
+        )
         RETURNING *
         "#,
     )
     .bind(payload.score)
     .bind(payload.max_score)
-    .bind(points_awarded)
     .bind(&payload.submission_id)
     .bind(user.id)
     .bind(notebook.challenge_id)
@@ -66,30 +60,12 @@ pub async fn nbgrader_grade_webhook(
     .await?
     .ok_or_else(|| AppError::NotFound)?;
 
-    // Credit points to user if not already credited
-    if !submission.points_credited {
-        sqlx::query("UPDATE users SET points = points + $1 WHERE id = $2")
-            .bind(points_awarded)
-            .bind(user.id)
-            .execute(&state.pool)
-            .await?;
-
-        // Mark as credited
-        sqlx::query("UPDATE challenge_submissions SET points_credited = true WHERE id = $1")
-            .bind(submission.id)
-            .execute(&state.pool)
-            .await?;
-
-        // Update user ranks
-        update_user_ranks(&state.pool).await?;
-    }
-
     Ok(Json(NbgraderWebhookResponse {
         success: true,
-        points_awarded,
+        points_awarded: 0,
         message: format!(
-            "Graded successfully: {}/{} points",
-            points_awarded, notebook.max_points
+            "Submission received for {} and marked as grading_pending",
+            notebook.assignment_name
         ),
     }))
 }

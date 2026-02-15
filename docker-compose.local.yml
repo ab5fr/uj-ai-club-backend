@@ -3,6 +3,8 @@ services:
     build:
       context: .
     env_file: .env
+    environment:
+      GRADING_SERVICE_URL: http://grading:9100
     volumes:
       - uploads_data:/app/uploads
     ports:
@@ -15,6 +17,8 @@ services:
     build:
       context: ./jupyterhub
     env_file: .env
+    environment:
+      DOCKER_NETWORK_NAME: internal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - nbgrader_exchange:/srv/nbgrader/exchange

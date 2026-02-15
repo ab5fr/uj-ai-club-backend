@@ -236,6 +236,7 @@ pub struct Challenge {
     pub title: String,
     pub description: String,
     pub challenge_url: String,
+    pub allowed_submissions: i32,
     pub is_current: bool,
     pub start_date: Option<time::OffsetDateTime>,
     pub end_date: Option<time::OffsetDateTime>,
@@ -447,6 +448,8 @@ pub struct AdminChallengeResponse {
     pub id: i32,
     pub title: String,
     pub description: String,
+    #[serde(rename = "allowedSubmissions")]
+    pub allowed_submissions: i32,
     #[serde(rename = "startDate")]
     pub start_date: Option<time::OffsetDateTime>,
     #[serde(rename = "endDate")]
@@ -465,6 +468,8 @@ pub struct AdminCreateChallengeRequest {
     pub week: Option<i32>,
     #[serde(rename = "challengeUrl")]
     pub challenge_url: Option<String>,
+    #[serde(rename = "allowedSubmissions")]
+    pub allowed_submissions: Option<i32>,
     #[serde(rename = "startDate", deserialize_with = "date_format::deserialize")]
     pub start_date: Option<time::OffsetDateTime>,
     #[serde(rename = "endDate", deserialize_with = "date_format::deserialize")]
@@ -479,6 +484,8 @@ pub struct AdminUpdateChallengeRequest {
     pub week: Option<i32>,
     #[serde(rename = "challengeUrl")]
     pub challenge_url: Option<String>,
+    #[serde(rename = "allowedSubmissions")]
+    pub allowed_submissions: Option<i32>,
     #[serde(rename = "startDate", deserialize_with = "date_format::deserialize")]
     pub start_date: Option<time::OffsetDateTime>,
     #[serde(rename = "endDate", deserialize_with = "date_format::deserialize")]
@@ -593,6 +600,7 @@ pub struct ChallengeSubmission {
     pub user_id: Uuid,
     pub challenge_id: i32,
     pub notebook_id: i32,
+    pub attempt_number: i32,
     pub status: String,
     pub score: Option<f64>,
     pub max_score: Option<f64>,
@@ -602,6 +610,8 @@ pub struct ChallengeSubmission {
     pub started_at: Option<time::OffsetDateTime>,
     pub submitted_at: Option<time::OffsetDateTime>,
     pub graded_at: Option<time::OffsetDateTime>,
+    pub manual_graded_by: Option<Uuid>,
+    pub manual_graded_at: Option<time::OffsetDateTime>,
     pub created_at: time::OffsetDateTime,
     pub updated_at: time::OffsetDateTime,
 }
@@ -611,8 +621,7 @@ pub struct ChallengeSubmission {
 pub enum SubmissionStatus {
     NotStarted,
     InProgress,
-    Submitted,
-    Grading,
+    GradingPending,
     Graded,
     Error,
 }
@@ -622,8 +631,7 @@ impl SubmissionStatus {
         match self {
             SubmissionStatus::NotStarted => "not_started",
             SubmissionStatus::InProgress => "in_progress",
-            SubmissionStatus::Submitted => "submitted",
-            SubmissionStatus::Grading => "grading",
+            SubmissionStatus::GradingPending => "grading_pending",
             SubmissionStatus::Graded => "graded",
             SubmissionStatus::Error => "error",
         }
@@ -633,8 +641,7 @@ impl SubmissionStatus {
         match s {
             "not_started" => Some(SubmissionStatus::NotStarted),
             "in_progress" => Some(SubmissionStatus::InProgress),
-            "submitted" => Some(SubmissionStatus::Submitted),
-            "grading" => Some(SubmissionStatus::Grading),
+            "grading_pending" => Some(SubmissionStatus::GradingPending),
             "graded" => Some(SubmissionStatus::Graded),
             "error" => Some(SubmissionStatus::Error),
             _ => None,
@@ -665,6 +672,8 @@ pub struct ChallengeWithNotebookResponse {
     pub week: i32,
     pub title: String,
     pub description: String,
+    #[serde(rename = "allowedSubmissions")]
+    pub allowed_submissions: i32,
     #[serde(rename = "hasNotebook")]
     pub has_notebook: bool,
     #[serde(rename = "maxPoints")]
@@ -682,6 +691,8 @@ pub struct UserSubmissionResponse {
     pub id: Uuid,
     #[serde(rename = "challengeId")]
     pub challenge_id: i32,
+    #[serde(rename = "attemptNumber")]
+    pub attempt_number: i32,
     pub status: String,
     pub score: Option<f64>,
     #[serde(rename = "maxScore")]
@@ -694,6 +705,12 @@ pub struct UserSubmissionResponse {
     pub submitted_at: Option<time::OffsetDateTime>,
     #[serde(rename = "gradedAt", serialize_with = "iso8601_option::serialize")]
     pub graded_at: Option<time::OffsetDateTime>,
+    #[serde(rename = "allowedSubmissions")]
+    pub allowed_submissions: i32,
+    #[serde(rename = "attemptsUsed")]
+    pub attempts_used: i64,
+    #[serde(rename = "attemptsRemaining")]
+    pub attempts_remaining: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -703,6 +720,12 @@ pub struct StartChallengeResponse {
     pub jupyterhub_url: String,
     #[serde(rename = "submissionId")]
     pub submission_id: Uuid,
+    #[serde(rename = "attemptNumber")]
+    pub attempt_number: i32,
+    #[serde(rename = "attemptsUsed")]
+    pub attempts_used: i64,
+    #[serde(rename = "attemptsRemaining")]
+    pub attempts_remaining: i64,
     pub token: String,
 }
 
@@ -736,6 +759,12 @@ pub struct SubmitChallengeResponse {
     pub success: bool,
     pub message: String,
     pub status: String,
+    #[serde(rename = "attemptNumber")]
+    pub attempt_number: i32,
+    #[serde(rename = "attemptsUsed")]
+    pub attempts_used: i64,
+    #[serde(rename = "attemptsRemaining")]
+    pub attempts_remaining: i64,
 }
 
 // Admin types for notebook management
@@ -814,6 +843,14 @@ pub struct AdminSubmissionResponse {
     pub challenge_id: i32,
     #[serde(rename = "challengeTitle")]
     pub challenge_title: String,
+    #[serde(rename = "allowedSubmissions")]
+    pub allowed_submissions: i32,
+    #[serde(rename = "attemptNumber")]
+    pub attempt_number: i32,
+    #[serde(rename = "attemptsUsed")]
+    pub attempts_used: i64,
+    #[serde(rename = "attemptsRemaining")]
+    pub attempts_remaining: i64,
     pub status: String,
     pub score: Option<f64>,
     #[serde(rename = "maxScore")]
@@ -828,6 +865,21 @@ pub struct AdminSubmissionResponse {
     pub submitted_at: Option<time::OffsetDateTime>,
     #[serde(rename = "gradedAt", serialize_with = "iso8601_option::serialize")]
     pub graded_at: Option<time::OffsetDateTime>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminSubmissionAccessResponse {
+    pub success: bool,
+    #[serde(rename = "viewUrl")]
+    pub view_url: String,
+    #[serde(rename = "downloadUrl")]
+    pub download_url: String,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdminGradeSubmissionRequest {
+    pub score: f64,
 }
 
 #[derive(Debug, Serialize, FromRow)]

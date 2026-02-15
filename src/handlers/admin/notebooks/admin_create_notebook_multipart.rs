@@ -1,15 +1,7 @@
-use axum::{
-    Json,
-    extract::{State},
-};
+use axum::{Json, extract::State};
 use uuid::Uuid;
 
-use crate::{
-    AppState,
-    auth::AdminUser,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::AdminUser, error::AppError, models::*};
 
 /// Create/upload a notebook for a challenge (admin)
 pub async fn admin_create_notebook_multipart(
@@ -134,6 +126,19 @@ pub async fn admin_create_notebook_multipart(
         ));
     }
 
+    let existing_assignment: Option<(i32,)> =
+        sqlx::query_as("SELECT id FROM challenge_notebooks WHERE assignment_name = $1 LIMIT 1")
+            .bind(&assignment_name)
+            .fetch_optional(&state.pool)
+            .await?;
+
+    if existing_assignment.is_some() {
+        return Err(AppError::BadRequest(
+            "This assignment name is already in use. Please choose a unique assignment name."
+                .to_string(),
+        ));
+    }
+
     // Save notebook file
     let notebooks_dir = "uploads/notebooks";
     tokio::fs::create_dir_all(notebooks_dir)
@@ -153,7 +158,7 @@ pub async fn admin_create_notebook_multipart(
     })?;
 
     // Insert into database
-    let notebook: ChallengeNotebook = sqlx::query_as(
+    let notebook_result = sqlx::query_as(
         r#"
         INSERT INTO challenge_notebooks 
         (challenge_id, assignment_name, notebook_filename, notebook_path, max_points, cpu_limit, memory_limit, time_limit_minutes, network_disabled)
@@ -171,7 +176,25 @@ pub async fn admin_create_notebook_multipart(
     .bind(time_limit_minutes)
     .bind(network_disabled)
     .fetch_one(&state.pool)
-    .await?;
+    .await;
+
+    let notebook: ChallengeNotebook = match notebook_result {
+        Ok(notebook) => notebook,
+        Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23505") => {
+            let message = match db_err.constraint() {
+                Some("challenge_notebooks_assignment_name_key") => {
+                    "This assignment name is already in use. Please choose a unique assignment name."
+                }
+                Some("unique_challenge_notebook") => {
+                    "A notebook already exists for this challenge. Delete it first."
+                }
+                _ => "Notebook already exists for this challenge or assignment.",
+            };
+
+            return Err(AppError::BadRequest(message.to_string()));
+        }
+        Err(e) => return Err(AppError::DatabaseError(e)),
+    };
 
     let response = AdminChallengeNotebookResponse {
         id: notebook.id,
