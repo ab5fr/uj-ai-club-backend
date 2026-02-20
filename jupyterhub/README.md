@@ -87,7 +87,7 @@ JUPYTERHUB_API_TOKEN=your_api_token
 
 # Grading webhook
 NBGRADER_WEBHOOK_SECRET=your_webhook_secret
-GRADING_WEBHOOK_URL=https://api.aiclub-uj.com/webhooks/nbgrader/grade
+GRADING_WEBHOOK_URL=https://api.uj-aiclub.com/webhooks/nbgrader/grade
 ```
 
 ### Resource Limits (Per Assignment)

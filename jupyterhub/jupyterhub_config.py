@@ -394,7 +394,7 @@ c.Spawner.pre_spawn_hook = pre_spawn_hook
 # Environment variable for the main app webhook URL
 GRADING_WEBHOOK_URL = os.environ.get(
     'GRADING_WEBHOOK_URL',
-    'https://api.aiclub-uj.com/webhooks/nbgrader/grade'
+    'https://api.uj-aiclub.com/webhooks/nbgrader/grade'
 )
 
 NBGRADER_WEBHOOK_SECRET = os.environ.get('NBGRADER_WEBHOOK_SECRET', '')

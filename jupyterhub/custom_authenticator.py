@@ -154,7 +154,7 @@ class AdminJWTAuthenticator(JWTAuthenticator):
         super().__init__(**kwargs)
         self.admin_users_api = os.environ.get(
             'ADMIN_USERS_API',
-            'https://api.aiclub-uj.com/users/profile'
+            'https://api.uj-aiclub.com/users/profile'
         )
     
     async def authenticate(self, handler, data):
