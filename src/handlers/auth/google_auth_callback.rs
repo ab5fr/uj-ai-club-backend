@@ -5,12 +5,7 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{
-    AppState,
-    auth::create_token,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::create_token, error::AppError, models::*};
 
 #[derive(Debug, Deserialize)]
 pub struct OAuthCallbackQuery {
@@ -70,16 +65,14 @@ pub async fn google_auth_callback(
     .fetch_optional(&state.pool)
     .await?;
 
-    let user = if let Some(user) = existing_user {
-        // User exists, update their info if needed
+    let user = if let Some(_user) = existing_user {
+        // User exists, keep local profile fields (full_name/image) as-is
         sqlx::query_as(
-            "UPDATE users SET email = $1, full_name = $2, image = $3 \
-             WHERE google_id = $4
+            "UPDATE users SET email = $1 \
+             WHERE google_id = $2
              RETURNING id, email, password_hash, full_name, phone_num, image, points, rank, role, jupyterhub_username, created_at"
         )
         .bind(&user_info.email)
-        .bind(user_info.name.as_deref().unwrap_or(&user.full_name))
-        .bind(&user_info.picture)
         .bind(&user_info.sub)
         .fetch_one(&state.pool)
         .await?
