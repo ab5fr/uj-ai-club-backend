@@ -3,12 +3,7 @@ use axum::{
     extract::{Path, State},
 };
 
-use crate::{
-    AppState,
-    auth::AuthUser,
-    error::AppError,
-    models::*,
-};
+use crate::{AppState, auth::AuthUser, error::AppError, models::*};
 
 /// Submit a challenge - marks submission as submitted and triggers grading
 /// This endpoint is called from the frontend when the user clicks "Submit"
@@ -75,17 +70,17 @@ pub async fn submit_challenge(
         .fetch_optional(&state.pool)
         .await?;
 
-        if let Some(latest) = latest_submission {
-            if latest.status == "grading_pending" {
-                return Ok(Json(SubmitChallengeResponse {
-                    success: true,
-                    message: "Your submission is pending manual grading by an admin.".to_string(),
-                    status: "grading_pending".to_string(),
-                    attempt_number: latest.attempt_number,
-                    attempts_used,
-                    attempts_remaining,
-                }));
-            }
+        if let Some(latest) = latest_submission
+            && latest.status == "grading_pending"
+        {
+            return Ok(Json(SubmitChallengeResponse {
+                success: true,
+                message: "Your submission is pending manual grading by an admin.".to_string(),
+                status: "grading_pending".to_string(),
+                attempt_number: latest.attempt_number,
+                attempts_used,
+                attempts_remaining,
+            }));
         }
 
         return Err(AppError::BadRequest(
@@ -115,8 +110,7 @@ pub async fn submit_challenge(
     )
     .bind(submission.id)
     .execute(&state.pool)
-    .await?
-    ;
+    .await?;
 
     // Call JupyterHub API to trigger submission/grading
     // The grading service will watch for the submission and grade it
@@ -158,7 +152,9 @@ pub async fn submit_challenge(
 
     Ok(Json(SubmitChallengeResponse {
         success: true,
-        message: "Submission received and marked as grading pending. An admin will review it manually.".to_string(),
+        message:
+            "Submission received and marked as grading pending. An admin will review it manually."
+                .to_string(),
         status: "grading_pending".to_string(),
         attempt_number: submission.attempt_number,
         attempts_used,
