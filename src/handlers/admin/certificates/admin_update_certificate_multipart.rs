@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::normalize_youtube_url::normalize_youtube_url;
-use super::save_uploaded_file::save_uploaded_file;
+use crate::handlers::admin::upload::save_uploaded_file;
 
 pub async fn admin_update_certificate_multipart(
     _auth: AdminUser,

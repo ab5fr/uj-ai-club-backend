@@ -148,7 +148,7 @@ where
             .ok_or(AppError::AuthError)?;
 
         if user_role.0 != "admin" {
-            return Err(AppError::AuthError);
+            return Err(AppError::Forbidden);
         }
 
         Ok(Self { user_id })

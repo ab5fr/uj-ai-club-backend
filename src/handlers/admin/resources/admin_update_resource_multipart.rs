@@ -10,7 +10,7 @@ use crate::{
     models::*,
 };
 
-use super::save_uploaded_file::save_uploaded_file;
+use crate::handlers::admin::upload::save_uploaded_file;
 
 pub async fn admin_update_resource_multipart(
     _auth: AdminUser,

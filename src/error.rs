@@ -10,6 +10,8 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Authentication failed")]
     AuthError,
+    #[error("Forbidden")]
+    Forbidden,
     #[error("Database error")]
     DatabaseError(#[from] sqlx::Error),
     #[error("Validation error: {0}")]
@@ -33,6 +35,7 @@ impl IntoResponse for AppError {
                 StatusCode::UNAUTHORIZED,
                 "Authentication failed".to_string(),
             ),
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
             AppError::DatabaseError(err) => match err {
                 sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23505") => {

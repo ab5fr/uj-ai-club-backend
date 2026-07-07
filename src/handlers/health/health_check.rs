@@ -16,7 +16,6 @@ pub struct HealthResponse {
 pub async fn health_check(
     State(state): State<AppState>,
 ) -> Result<Json<HealthResponse>, StatusCode> {
-    // Check database connection
     let db_status = match sqlx::query("SELECT 1").fetch_one(&state.pool).await {
         Ok(_) => "healthy",
         Err(_) => "unhealthy",

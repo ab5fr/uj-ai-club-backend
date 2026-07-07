@@ -7,8 +7,10 @@ A concise, implementation-accurate reference for every API endpoint in this serv
 - **Base URL:** Configured by your deployment (examples in config/env). All paths below are relative.
 - **Content-Type:** JSON for most endpoints. Multipart form data for file uploads. Some endpoints return redirects or files.
 - **Auth:**
-  - **User auth** uses `Authorization: Bearer <token>`.
-  - **Admin auth** uses the same header but requires the user role to be `admin`.
+  - Authentication is handled by **Firebase** on the client (Google sign-in, email/password, etc.).
+  - The backend accepts a Firebase ID token via `Authorization: Bearer <firebase-id-token>`.
+  - Call `POST /auth/session` after sign-in to sync the user record and check profile completion.
+  - **Admin routes** use the same header but require the user role to be `admin`.
 
 ## Error Format
 
@@ -24,8 +26,10 @@ Common statuses:
 
 - `400` Bad Request
 - `401` Unauthorized
+- `403` Forbidden (authenticated user lacks admin role)
 - `404` Not Found
 - `409` Conflict
+- `429` Too Many Requests
 - `500` Internal Server Error
 - `503` Service Unavailable (health check only)
 
@@ -56,79 +60,46 @@ Common statuses:
 
 # Auth
 
-## POST /auth/login
+Authentication is performed on the client with Firebase. The backend verifies Firebase ID tokens and manages user records in the local database.
 
-**Auth:** None
+## POST /auth/session
 
-**What it does:** Email/password login.
+**Auth:** Firebase ID token (`Authorization: Bearer <firebase-id-token>`)
 
-**Inputs (JSON):**
+**What it does:** Verifies the Firebase token, creates the user on first Google sign-in if needed, ensures `user_stats` exists, and returns the app user profile.
 
-```json
-{
-  "email": "user@example.com",
-  "password": "plain-text-password"
-}
-```
+**Inputs:** None (token in `Authorization` header)
 
 **Output (200):**
 
 ```json
 {
-  "token": "jwt",
   "user": {
     "id": "uuid",
     "fullName": "User Name",
     "email": "user@example.com",
     "image": "/uploads/...",
     "role": "user"
-  }
+  },
+  "needsProfileCompletion": true
 }
 ```
 
-**Errors:** `401` for invalid credentials, `400` for Google-only accounts.
-
-## GET /auth/google
-
-**Auth:** None
-
-**What it does:** Starts Google OAuth and redirects to Google.
-
-**Inputs:** None
-
-**Output:** `302` Redirect to Google OAuth consent screen.
-
-## GET /auth/google/callback
-
-**Auth:** None
-
-**What it does:** Handles Google OAuth callback, links/creates user, and redirects back to frontend.
-
-**Inputs (Query):**
-
-- `code` (required)
-- `state` (required by OAuth, not used server-side)
-
-**Output:** `302` Redirect to frontend with query params:
-
-- `token` (JWT)
-- `user` (URL-encoded JSON)
-- `needs_profile_completion` (optional, `true` when university/major missing)
-- `needs_password` (optional, `true` when password hash is null)
+**Errors:** `401` for invalid or missing token. New users are only auto-created for Google sign-in (`google.com` provider).
 
 ## POST /auth/complete-profile
 
-**Auth:** User (Bearer token)
+**Auth:** User (Firebase ID token)
 
-**What it does:** Completes profile after Google sign-in (sets university, major, and password).
+**What it does:** Completes profile after sign-in (sets full name, university, and major).
 
 **Inputs (JSON):**
 
 ```json
 {
+  "full_name": "User Name",
   "university": "University of Jordan",
-  "major": "Computer Science",
-  "password": "new-password"
+  "major": "Computer Science"
 }
 ```
 
@@ -139,6 +110,8 @@ Common statuses:
   "success": true
 }
 ```
+
+**Errors:** `400` if full name is empty.
 
 ---
 
@@ -542,27 +515,6 @@ All endpoints in this section require `Authorization: Bearer <token>`.
 }
 ```
 
-## PUT /users/password
-
-**Auth:** User (Bearer token)
-
-**What it does:** Changes the user password (non-Google accounts only).
-
-**Inputs (JSON):**
-
-```json
-{
-  "currentPassword": "old-password",
-  "newPassword": "new-password"
-}
-```
-
-**Output (200):**
-
-```json
-{ "success": true }
-```
-
 ---
 
 # Webhooks
@@ -603,7 +555,7 @@ All endpoints in this section require `Authorization: Bearer <token>`.
 
 # Admin: Resources (Admin Auth)
 
-All endpoints in this section require admin token.
+All endpoints in this section require a Firebase ID token for a user with role `admin`. Returns `403` if authenticated but not admin, `401` if token is missing or invalid.
 
 ## GET /admin/resources
 

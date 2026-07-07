@@ -3,7 +3,7 @@ use axum::{Json, extract::State};
 use crate::{AppState, auth::AdminUser, error::AppError, models::*};
 
 use super::normalize_youtube_url::normalize_youtube_url;
-use super::save_uploaded_file::save_uploaded_file;
+use crate::handlers::admin::upload::save_uploaded_file;
 
 pub async fn admin_create_certificate_multipart(
     _auth: AdminUser,
