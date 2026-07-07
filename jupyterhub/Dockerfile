@@ -1,7 +1,7 @@
 # JupyterHub Docker Image for UJ AI Club
 # Includes DockerSpawner, nbgrader, and custom authenticator
 
-FROM jupyterhub/jupyterhub:4.0
+FROM jupyterhub/jupyterhub:5.5.0
 
 USER root
 

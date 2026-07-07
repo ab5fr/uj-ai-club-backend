@@ -43,12 +43,18 @@ pub struct JwkCache {
     fetched_at: Option<Instant>,
 }
 
-impl JwkCache {
-    pub fn new() -> Self {
+impl Default for JwkCache {
+    fn default() -> Self {
         Self {
             keys: HashMap::new(),
             fetched_at: None,
         }
+    }
+}
+
+impl JwkCache {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     fn is_stale(&self) -> bool {
