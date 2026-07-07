@@ -14,19 +14,17 @@ pub use admin::{
     admin_create_notebook_multipart, admin_create_resource, admin_create_resource_multipart,
     admin_delete_certificate, admin_delete_challenge, admin_delete_notebook, admin_delete_resource,
     admin_get_certificate_by_id, admin_get_certificates, admin_get_challenge_by_id,
-    admin_get_challenges, admin_get_notebook_by_challenge, admin_get_notebook_edit_url,
-    admin_get_notebooks, admin_get_resource_by_id, admin_get_resources,
-    admin_get_submission_access, admin_get_submission_file, admin_get_submissions,
-    admin_grade_submission, admin_patch_certificate_visibility, admin_patch_challenge_visibility,
-    admin_patch_resource_visibility, admin_sync_notebook_to_nbgrader, admin_update_certificate,
-    admin_update_certificate_multipart, admin_update_challenge, admin_update_notebook,
-    admin_update_resource, admin_update_resource_multipart,
+    admin_get_challenges, admin_get_contact_messages, admin_get_notebook_by_challenge,
+    admin_get_notebook_edit_url, admin_get_notebooks, admin_get_resource_by_id,
+    admin_get_resources, admin_get_submission_access, admin_get_submission_file,
+    admin_get_submissions, admin_grade_submission, admin_patch_certificate_visibility,
+    admin_patch_challenge_visibility, admin_patch_resource_visibility,
+    admin_sync_notebook_to_nbgrader, admin_update_certificate, admin_update_certificate_multipart,
+    admin_update_challenge, admin_update_notebook, admin_update_resource,
+    admin_update_resource_multipart,
 };
 pub use auth::complete_profile::complete_profile;
-pub use auth::google_auth_callback::google_auth_callback;
-pub use auth::google_auth_init::google_auth_init;
-pub use auth::login::login;
-pub use auth::signup::signup;
+pub use auth::session::session;
 pub use certificates::get_certificate_by_id::get_certificate_by_id;
 pub use certificates::get_certificates::get_certificates;
 pub use challenges::get_challenge_leaderboard::get_challenge_leaderboard;
@@ -42,7 +40,6 @@ pub use health_check::health_check;
 pub use resources::get_resource_by_id::get_resource_by_id;
 pub use resources::get_resources::get_resources;
 pub use users::get_user_profile::get_user_profile;
-pub use users::update_user_password::update_user_password;
 pub use users::update_user_profile::update_user_profile;
 pub use users::upload_user_avatar::upload_user_avatar;
 pub use webhooks::nbgrader_grade_webhook::nbgrader_grade_webhook;

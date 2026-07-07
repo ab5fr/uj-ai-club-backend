@@ -16,6 +16,8 @@ pub enum AppError {
     ValidationError(String),
     #[error("Bad request: {0}")]
     BadRequest(String),
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String),
     #[error("User already exists")]
     UserExists,
     #[error("Resource not found")]
@@ -50,6 +52,7 @@ impl IntoResponse for AppError {
             },
             AppError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, msg.clone()),
             AppError::UserExists => (StatusCode::CONFLICT, "User already exists".to_string()),
             AppError::InternalError(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

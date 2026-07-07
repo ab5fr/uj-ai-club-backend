@@ -1,16 +1,15 @@
 use axum::{
     async_trait,
     extract::{FromRef, FromRequestParts},
-    http::{header::AUTHORIZATION, request::Parts},
+    http::{HeaderMap, header::AUTHORIZATION, request::Parts},
 };
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use std::env;
 use uuid::Uuid;
 
-use crate::error::AppError;
+use crate::{AppState, error::AppError, firebase};
 
 static KEYS: Lazy<Keys> = Lazy::new(|| {
     let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
@@ -31,24 +30,19 @@ impl Keys {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Claims {
-    pub sub: String,
-    pub exp: i64,
+pub fn extract_bearer_from_headers(headers: &HeaderMap) -> Result<String, AppError> {
+    headers
+        .get(AUTHORIZATION)
+        .ok_or(AppError::AuthError)?
+        .to_str()
+        .map_err(|_| AppError::AuthError)?
+        .strip_prefix("Bearer ")
+        .ok_or(AppError::AuthError)
+        .map(str::to_string)
 }
 
-impl Claims {
-    pub fn new(user_id: Uuid) -> Self {
-        Self {
-            sub: user_id.to_string(),
-            exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp(),
-        }
-    }
-}
-
-pub fn create_token(user_id: Uuid) -> Result<String, AppError> {
-    encode(&Header::default(), &Claims::new(user_id), &KEYS.encoding)
-        .map_err(|e| AppError::InternalError(e.into()))
+pub fn extract_bearer_token(parts: &Parts) -> Result<String, AppError> {
+    extract_bearer_from_headers(&parts.headers)
 }
 
 /// Claims for JupyterHub SSO token
@@ -93,6 +87,24 @@ pub fn verify_jupyterhub_token(token: &str) -> Result<JupyterHubClaims, AppError
     Ok(token_data.claims)
 }
 
+async fn resolve_user_id(state: &AppState, token: &str) -> Result<Uuid, AppError> {
+    let claims = firebase::verify_id_token(
+        &state.jwk_cache,
+        &state.firebase_project_id,
+        token,
+    )
+    .await?;
+
+    let user_id: (Uuid,) = sqlx::query_as("SELECT id FROM users WHERE firebase_uid = $1")
+        .bind(&claims.sub)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| AppError::InternalError(e.into()))?
+        .ok_or(AppError::AuthError)?;
+
+    Ok(user_id.0)
+}
+
 pub struct AuthUser {
     pub user_id: Uuid,
 }
@@ -105,23 +117,14 @@ pub struct AdminUser {
 impl<S> FromRequestParts<S> for AuthUser
 where
     S: Send + Sync,
+    AppState: FromRef<S>,
 {
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let bearer = parts
-            .headers
-            .get(AUTHORIZATION)
-            .ok_or(AppError::AuthError)?
-            .to_str()
-            .map_err(|_| AppError::AuthError)?
-            .strip_prefix("Bearer ")
-            .ok_or(AppError::AuthError)?;
-
-        let token_data = decode::<Claims>(bearer, &KEYS.decoding, &Validation::default())
-            .map_err(|_| AppError::AuthError)?;
-
-        let user_id = Uuid::parse_str(&token_data.claims.sub).map_err(|_| AppError::AuthError)?;
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let app_state = AppState::from_ref(state);
+        let token = extract_bearer_token(parts)?;
+        let user_id = resolve_user_id(&app_state, &token).await?;
 
         Ok(Self { user_id })
     }
@@ -131,30 +134,18 @@ where
 impl<S> FromRequestParts<S> for AdminUser
 where
     S: Send + Sync,
-    PgPool: axum::extract::FromRef<S>,
+    AppState: FromRef<S>,
 {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let bearer = parts
-            .headers
-            .get(AUTHORIZATION)
-            .ok_or(AppError::AuthError)?
-            .to_str()
-            .map_err(|_| AppError::AuthError)?
-            .strip_prefix("Bearer ")
-            .ok_or(AppError::AuthError)?;
-
-        let token_data = decode::<Claims>(bearer, &KEYS.decoding, &Validation::default())
-            .map_err(|_| AppError::AuthError)?;
-
-        let user_id = Uuid::parse_str(&token_data.claims.sub).map_err(|_| AppError::AuthError)?;
-
-        let pool = PgPool::from_ref(state);
+        let app_state = AppState::from_ref(state);
+        let token = extract_bearer_token(parts)?;
+        let user_id = resolve_user_id(&app_state, &token).await?;
 
         let user_role: (String,) = sqlx::query_as("SELECT role FROM users WHERE id = $1")
             .bind(user_id)
-            .fetch_optional(&pool)
+            .fetch_optional(&app_state.pool)
             .await
             .map_err(|e| AppError::InternalError(e.into()))?
             .ok_or(AppError::AuthError)?;

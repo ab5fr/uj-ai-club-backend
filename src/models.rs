@@ -55,12 +55,25 @@ mod iso8601_option {
     }
 }
 
+mod iso8601 {
+    use serde::{self, Serializer};
+    use time::OffsetDateTime;
+    use time::format_description::well_known::Rfc3339;
+
+    pub fn serialize<S>(date: &OffsetDateTime, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = date.format(&Rfc3339).map_err(serde::ser::Error::custom)?;
+        serializer.serialize_str(&s)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct User {
     pub id: Uuid,
     pub email: String,
-    #[serde(skip_serializing)]
-    pub password_hash: Option<String>,
+    pub firebase_uid: String,
     pub full_name: String,
     pub phone_num: Option<String>,
     pub image: Option<String>,
@@ -71,28 +84,6 @@ pub struct User {
     pub created_at: time::OffsetDateTime,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RegisterRequest {
-    #[serde(rename = "fullName")]
-    pub full_name: String,
-    #[serde(rename = "phoneNum")]
-    pub phone_num: String,
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AuthResponse {
-    pub token: String,
-    pub user: UserResponse,
-}
-
 #[derive(Debug, Serialize)]
 pub struct UserResponse {
     pub id: Uuid,
@@ -101,6 +92,13 @@ pub struct UserResponse {
     pub email: String,
     pub image: Option<String>,
     pub role: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionResponse {
+    pub user: UserResponse,
+    #[serde(rename = "needsProfileCompletion")]
+    pub needs_profile_completion: bool,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -308,6 +306,26 @@ pub struct ContactResponse {
     pub message: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct ContactMessage {
+    pub id: Uuid,
+    pub name: String,
+    pub email: String,
+    pub message: String,
+    pub sender_ip: Option<String>,
+    pub created_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminContactMessageResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub email: String,
+    pub message: String,
+    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
+    pub created_at: time::OffsetDateTime,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AdminResourceResponse {
     pub id: i32,
@@ -320,9 +338,9 @@ pub struct AdminResourceResponse {
     pub instructor: Option<AdminInstructorResponse>,
     pub quote: Option<AdminQuoteResponse>,
     pub visible: bool,
-    #[serde(rename = "createdAt")]
+    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
     pub created_at: time::OffsetDateTime,
-    #[serde(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
     pub updated_at: time::OffsetDateTime,
 }
 
@@ -344,9 +362,9 @@ pub struct AdminCertificateResponse {
     #[serde(rename = "youtubeUrl")]
     pub youtube_url: Option<String>,
     pub visible: bool,
-    #[serde(rename = "createdAt")]
+    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
     pub created_at: time::OffsetDateTime,
-    #[serde(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
     pub updated_at: time::OffsetDateTime,
 }
 
@@ -450,14 +468,14 @@ pub struct AdminChallengeResponse {
     pub description: String,
     #[serde(rename = "allowedSubmissions")]
     pub allowed_submissions: i32,
-    #[serde(rename = "startDate")]
+    #[serde(rename = "startDate", serialize_with = "iso8601_option::serialize")]
     pub start_date: Option<time::OffsetDateTime>,
-    #[serde(rename = "endDate")]
+    #[serde(rename = "endDate", serialize_with = "iso8601_option::serialize")]
     pub end_date: Option<time::OffsetDateTime>,
     pub visible: bool,
-    #[serde(rename = "createdAt")]
+    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
     pub created_at: time::OffsetDateTime,
-    #[serde(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
     pub updated_at: time::OffsetDateTime,
 }
 
@@ -532,46 +550,15 @@ pub struct UploadAvatarResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct UpdatePasswordRequest {
-    #[serde(rename = "currentPassword")]
-    pub current_password: String,
-    #[serde(rename = "newPassword")]
-    pub new_password: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct UpdatePasswordResponse {
-    pub success: bool,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct CompleteProfileRequest {
+    pub full_name: String,
     pub university: String,
     pub major: String,
-    pub password: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CompleteProfileResponse {
     pub success: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SetPasswordRequest {
-    pub password: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SetPasswordResponse {
-    pub success: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct GoogleUserInfo {
-    pub sub: String,
-    pub email: String,
-    pub name: Option<String>,
-    pub picture: Option<String>,
 }
 
 // ============================================
@@ -790,9 +777,9 @@ pub struct AdminChallengeNotebookResponse {
     pub time_limit_minutes: i32,
     #[serde(rename = "networkDisabled")]
     pub network_disabled: bool,
-    #[serde(rename = "createdAt")]
+    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
     pub created_at: time::OffsetDateTime,
-    #[serde(rename = "updatedAt")]
+    #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
     pub updated_at: time::OffsetDateTime,
 }
 

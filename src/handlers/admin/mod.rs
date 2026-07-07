@@ -2,6 +2,8 @@
 pub mod certificates;
 #[path = "challenges/mod.rs"]
 pub mod challenges;
+#[path = "contact/mod.rs"]
+pub mod contact;
 #[path = "notebooks/mod.rs"]
 pub mod notebooks;
 #[path = "resources/mod.rs"]
@@ -18,6 +20,7 @@ pub use challenges::{
     admin_create_challenge, admin_delete_challenge, admin_get_challenge_by_id,
     admin_get_challenges, admin_patch_challenge_visibility, admin_update_challenge,
 };
+pub use contact::admin_get_contact_messages;
 pub use notebooks::{
     admin_create_notebook_multipart, admin_delete_notebook, admin_get_notebook_by_challenge,
     admin_get_notebook_edit_url, admin_get_notebooks, admin_sync_notebook_to_nbgrader,
