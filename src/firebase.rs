@@ -38,18 +38,10 @@ struct CachedJwk {
     e: String,
 }
 
+#[derive(Default)]
 pub struct JwkCache {
     keys: HashMap<String, CachedJwk>,
     fetched_at: Option<Instant>,
-}
-
-impl Default for JwkCache {
-    fn default() -> Self {
-        Self {
-            keys: HashMap::new(),
-            fetched_at: None,
-        }
-    }
 }
 
 impl JwkCache {
