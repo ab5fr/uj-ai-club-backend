@@ -28,6 +28,8 @@ c.JupyterHub.hub_connect_ip = os.environ.get('JUPYTERHUB_HUB_CONNECT_IP', 'jupyt
 # Use the custom JWT authenticator if JWT_SECRET is set, otherwise use Dummy for dev
 if os.environ.get('JWT_SECRET'):
     c.JupyterHub.authenticator_class = JWTAuthenticator
+    # Only users with a valid JWT from the main API can authenticate; allow them to spawn.
+    c.Authenticator.allow_all = True
 else:
     # Fallback to dummy authenticator for local development
     c.JupyterHub.authenticator_class = 'jupyterhub.auth.DummyAuthenticator'
@@ -110,11 +112,17 @@ c.DockerSpawner.mem_guarantee = '256M'
 # Network Isolation
 # ===========================================
 
-# Use network name from environment variable (set by docker-compose)
-# For local dev, can use 'bridge' network
+# Default network for Hub <-> student (and for challenges that allow internet).
 network_name = os.environ.get('DOCKER_NETWORK_NAME', 'internal')
 c.DockerSpawner.network_name = network_name
 c.DockerSpawner.use_internal_ip = True
+
+# Isolated network with no outbound internet (networkDisabled challenges).
+# Hub must also be attached to this network in compose.
+student_isolated_network = os.environ.get(
+    'STUDENT_ISOLATED_NETWORK_NAME',
+    os.environ.get('DOCKER_NETWORK_NAME', 'internal'),
+)
 
 # Don't use extra_host_config network_mode as it conflicts with network_name
 c.DockerSpawner.extra_host_config = {}
@@ -146,10 +154,11 @@ c.Spawner.start_timeout = 120
 c.Spawner.http_timeout = 120
 
 # Idle culling - shut down inactive servers
+# Formgrader is admin-only via JupyterHub proxy (service admin=True).
+# Do not disable XSRF or allow wildcard origins on the notebook server.
 c.JupyterHub.services = [
     {
         'name': 'idle-culler',
-        'admin': True,
         'command': [
             sys.executable,
             '-m', 'jupyterhub_idle_culler',
@@ -157,7 +166,6 @@ c.JupyterHub.services = [
             '--max-age=14400',  # 4 hour max age
         ],
     },
-    # nbgrader formgrader service for admins
     {
         'name': 'formgrader',
         'url': 'http://127.0.0.1:9000',
@@ -170,11 +178,44 @@ c.JupyterHub.services = [
             '--NotebookApp.base_url=/services/formgrader/',
             '--NotebookApp.token=',
             '--NotebookApp.password=',
-            '--NotebookApp.allow_origin=*',
-            '--NotebookApp.disable_check_xsrf=True',
+            '--NotebookApp.disable_check_xsrf=False',
             '--NotebookApp.nbserver_extensions={"nbgrader.server_extensions.formgrader": true}',
         ],
         'admin': True,
+    },
+    # Shared by the Rust API to stop student servers after submit / session close.
+    {
+        'name': 'grading-service',
+        'api_token': os.environ.get('JUPYTERHUB_API_TOKEN', 'default-token'),
+    },
+]
+
+# RBAC roles (JupyterHub 2+). Services have no permissions unless assigned here.
+# Also assign to user "grading-service" in case a legacy api_tokens mapping
+# still authenticates the shared token as a user instead of the service.
+c.JupyterHub.load_roles = [
+    {
+        'name': 'idle-culler',
+        'description': 'Cull idle user servers',
+        'scopes': [
+            'read:users:name',
+            'read:users:activity',
+            'read:servers',
+            'delete:servers',
+        ],
+        'services': ['idle-culler'],
+    },
+    {
+        'name': 'grading-service',
+        'description': 'Backend can inspect and stop student notebook servers',
+        'scopes': [
+            'read:users',
+            'read:servers',
+            'admin:servers',
+            'delete:servers',
+        ],
+        'services': ['grading-service'],
+        'users': ['grading-service'],
     },
 ]
 
@@ -206,10 +247,8 @@ c.CourseDirectory.course_id = 'ujaiclub'
 # Webhook Configuration
 # ===========================================
 
-# API token for internal services
-c.JupyterHub.api_tokens = {
-    os.environ.get('JUPYTERHUB_API_TOKEN', 'default-token'): 'grading-service',
-}
+# API token is configured on the grading-service entry in c.JupyterHub.services.
+# (c.JupyterHub.api_tokens is deprecated and does not grant RBAC scopes.)
 
 # ===========================================
 # Logging
@@ -222,13 +261,112 @@ c.Spawner.debug = False
 # Custom Spawner Hooks
 # ===========================================
 
+SPAWN_CONFIG_FILENAME = '.ujaiclub_spawn.json'
+
+
+def _docker_escape(name):
+    """Match dockerspawner's escape() for volume names ('_' -> '-5f')."""
+    safe = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-')
+    escape_char = '-'
+    out = []
+    for c in name:
+        if c in safe:
+            out.append(c)
+        else:
+            out.append(escape_char)
+            out.append(f'{ord(c):02x}')
+    return ''.join(out)
+
+
+def _read_spawn_config_from_volume(username):
+    """Read per-challenge spawn settings staged onto the user's work volume."""
+    import json
+    import docker
+
+    volume_name = f'jupyterhub-user-{_docker_escape(username)}'
+    try:
+        client = docker.from_env()
+        output = client.containers.run(
+            'alpine:latest',
+            ['cat', f'/data/{SPAWN_CONFIG_FILENAME}'],
+            volumes={volume_name: {'bind': '/data', 'mode': 'ro'}},
+            remove=True,
+            detach=False,
+        )
+        if isinstance(output, bytes):
+            output = output.decode('utf-8')
+        return json.loads(output)
+    except Exception:
+        return None
+
+
+def _validate_spawn_with_backend(username):
+    """Ask the API whether this JupyterHub user may start a server right now."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    backend_url = os.environ.get('BACKEND_URL', 'http://api:8000').rstrip('/')
+    secret = os.environ.get('GRADING_SERVICE_SECRET', '')
+    if not secret:
+        return {'allowed': False, 'message': 'GRADING_SERVICE_SECRET not configured'}
+
+    req = urllib.request.Request(
+        f'{backend_url}/internal/jupyterhub/validate-spawn',
+        data=json.dumps({'username': username}).encode('utf-8'),
+        headers={
+            'Content-Type': 'application/json',
+            'X-Grading-Service-Secret': secret,
+        },
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as e:
+        return {'allowed': False, 'message': f'Spawn validation failed: {e}'}
+
+
 def pre_spawn_hook(spawner):
     """
     Hook called before spawning a user's server.
-    Copies notebooks from source to user workspace, removing solutions and hidden tests.
+    Blocks student spawns after challenge time expires (hub cookie alone is not enough).
+    Applies challenge resource/network settings from prepare-notebook.
     """
     username = spawner.user.name
     spawner.log.info(f"Pre-spawn hook for user: {username}")
+
+    # Students must have an unexpired in-progress session. Admins are always allowed.
+    if username.startswith('user_'):
+        validation = _validate_spawn_with_backend(username)
+        if not validation.get('allowed'):
+            message = validation.get('message') or 'Challenge session expired'
+            spawner.log.warning(f"Spawn denied for {username}: {message}")
+            raise Exception(message)
+
+    cfg = _read_spawn_config_from_volume(username) or {}
+    network_disabled = cfg.get('networkDisabled', True)
+    if network_disabled:
+        spawner.network_name = student_isolated_network
+        spawner.log.info(
+            f"Network disabled for {username}; using isolated network {student_isolated_network}"
+        )
+    else:
+        spawner.network_name = network_name
+        spawner.log.info(
+            f"Network enabled for {username}; using network {network_name}"
+        )
+
+    cpu_limit = cfg.get('cpuLimit')
+    if cpu_limit is not None:
+        try:
+            spawner.cpu_limit = float(cpu_limit)
+        except (TypeError, ValueError):
+            pass
+
+    memory_limit = cfg.get('memoryLimit')
+    if memory_limit:
+        spawner.mem_limit = str(memory_limit)
     
     # IMPORTANT:
     # Overriding the single-user command can break JupyterHub health checks and OAuth flow.

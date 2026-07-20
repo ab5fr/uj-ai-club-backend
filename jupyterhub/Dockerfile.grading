@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir \
 
 # Copy grading service
 COPY grading_service.py /app/grading_service.py
+COPY notebook_processor.py /app/notebook_processor.py
 COPY nbgrader_config_hub.py /etc/jupyter/nbgrader_config.py
 
 # Create directories

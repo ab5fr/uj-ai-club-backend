@@ -1,18 +1,22 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::State,
+};
+use time::OffsetDateTime;
 
 use crate::{
     AppState,
     auth::AuthUser,
     error::AppError,
     models::*,
+    submissions::effective_allowed_submissions,
 };
 
 /// Get all challenges with notebook information for the user
 pub async fn get_challenges_with_notebooks(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ChallengeWithNotebookResponse>>, AppError> {
-    // Get all visible challenges with their notebook info
     let challenges: Vec<Challenge> = sqlx::query_as(
         r#"
         SELECT * FROM challenges 
@@ -26,14 +30,82 @@ pub async fn get_challenges_with_notebooks(
     let mut responses = Vec::new();
 
     for challenge in challenges {
-        let allowed_submissions = challenge.allowed_submissions.max(1);
+        let allowed_submissions = effective_allowed_submissions(
+            &state.pool,
+            auth.user_id,
+            challenge.id,
+            challenge.allowed_submissions,
+        )
+        .await?;
 
-        // Check if this challenge has a notebook
         let notebook: Option<ChallengeNotebook> =
             sqlx::query_as("SELECT * FROM challenge_notebooks WHERE challenge_id = $1")
                 .bind(challenge.id)
                 .fetch_optional(&state.pool)
                 .await?;
+
+        let attempts_used: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM challenge_submissions WHERE user_id = $1 AND challenge_id = $2",
+        )
+        .bind(auth.user_id)
+        .bind(challenge.id)
+        .fetch_one(&state.pool)
+        .await?;
+
+        let latest: Option<ChallengeSubmission> = sqlx::query_as(
+            r#"
+            SELECT * FROM challenge_submissions
+            WHERE user_id = $1 AND challenge_id = $2
+            ORDER BY attempt_number DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(auth.user_id)
+        .bind(challenge.id)
+        .fetch_optional(&state.pool)
+        .await?;
+
+        let now = OffsetDateTime::now_utc();
+        let has_in_progress = latest
+            .as_ref()
+            .map(|s| s.status == "in_progress")
+            .unwrap_or(false);
+
+        let (submission_status, session_expires_at, can_submit, can_continue, can_start) =
+            if let Some(s) = &latest {
+                if s.status == "in_progress" {
+                    let expired = s
+                        .session_expires_at
+                        .map(|e| now >= e)
+                        .unwrap_or(false);
+                    let revoked = s.session_revoked_at.is_some();
+                    (
+                        Some(s.status.clone()),
+                        s.session_expires_at,
+                        !revoked,
+                        !expired && !revoked,
+                        false,
+                    )
+                } else {
+                    (
+                        Some(s.status.clone()),
+                        s.session_expires_at,
+                        false,
+                        false,
+                        notebook.is_some()
+                            && !has_in_progress
+                            && attempts_used < allowed_submissions as i64,
+                    )
+                }
+            } else {
+                (
+                    None,
+                    None,
+                    false,
+                    false,
+                    notebook.is_some() && attempts_used < allowed_submissions as i64,
+                )
+            };
 
         responses.push(ChallengeWithNotebookResponse {
             id: challenge.id,
@@ -46,6 +118,13 @@ pub async fn get_challenges_with_notebooks(
             time_limit_minutes: notebook.as_ref().map(|n| n.time_limit_minutes),
             start_date: challenge.start_date,
             end_date: challenge.end_date,
+            submission_status,
+            session_expires_at,
+            can_start: can_start && notebook.is_some(),
+            can_submit,
+            can_continue,
+            attempts_used,
+            attempts_remaining: (allowed_submissions as i64 - attempts_used).max(0),
         });
     }
 

@@ -5,29 +5,30 @@ edition = "2024"
 default-run = "uj-ai-club-backend"
 
 [dependencies]
-tokio = { version = "*", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["macros", "multipart"] }
-tower-http = { version = "*", features = ["cors", "fs"] }
-sqlx = { version = "*", features = ["runtime-tokio-rustls", "postgres", "time", "uuid", "migrate"] }
-serde = { version = "*", features = ["derive"] }
-serde_json = "*"
-jsonwebtoken = { version = "*", features = ["rust_crypto"] }
-dotenv = "*"
-tracing = "*"
-tracing-subscriber = { version = "*", features = ["env-filter"] }
-anyhow = "*"
-thiserror = "*"
-uuid = { version = "*", features = ["serde", "v4"] }
-time = { version = "*", features = ["serde"] }
-once_cell = "*"
-chrono = "*"
-tokio-util = { version = "*", features = ["io"] }
-bytes = "*"
-reqwest = { version = "*", features = ["json", "rustls-tls"] }
-url = "*"
-urlencoding = "*"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "time", "uuid", "migrate"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+jsonwebtoken = "9"
+dotenv = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
+time = { version = "0.3", features = ["serde"] }
+once_cell = "1"
+chrono = "0.4"
+tokio-util = { version = "0.7", features = ["io"] }
+bytes = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+url = "2"
+urlencoding = "2"
+http = "1"
 
 [dev-dependencies]
-reqwest = { version = "*", features = ["json"] }
-tokio-test = "*"
-tower = "*"
+reqwest = { version = "0.12", features = ["json"] }
+tokio-test = "0.4"
+tower = "0.5"

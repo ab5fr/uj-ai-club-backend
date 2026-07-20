@@ -30,6 +30,7 @@ pub async fn admin_get_notebooks(
             memory_limit: n.memory_limit,
             time_limit_minutes: n.time_limit_minutes,
             network_disabled: n.network_disabled,
+            auto_grade_enabled: n.auto_grade_enabled,
             created_at: n.created_at,
             updated_at: n.updated_at,
         })

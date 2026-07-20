@@ -20,15 +20,20 @@ RUN pip install --no-cache-dir \
 RUN mkdir -p /srv/nbgrader/exchange \
     && chmod 777 /srv/nbgrader/exchange
 
-# Create nbgrader config
+# Create nbgrader / Jupyter server config
 RUN mkdir -p /etc/jupyter
 COPY nbgrader_config.py /etc/jupyter/nbgrader_config.py
+COPY jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
 
-# Configure Jupyter settings
-RUN mkdir -p /home/jovyan/.jupyter
-RUN echo "c.ServerApp.token = ''" >> /home/jovyan/.jupyter/jupyter_server_config.py \
+# JupyterLab Document Manager autosave (server FileContentsManager.autosave_interval
+# was removed; Lab reads these overrides at startup).
+RUN mkdir -p /opt/conda/share/jupyter/lab/settings
+COPY overrides.json /opt/conda/share/jupyter/lab/settings/overrides.json
+
+# Configure Jupyter user settings
+RUN mkdir -p /home/jovyan/.jupyter \
+    && echo "c.ServerApp.token = ''" >> /home/jovyan/.jupyter/jupyter_server_config.py \
     && echo "c.ServerApp.password = ''" >> /home/jovyan/.jupyter/jupyter_server_config.py \
-    && echo "c.ServerApp.allow_origin = '*'" >> /home/jovyan/.jupyter/jupyter_server_config.py \
     && chown -R jovyan:users /home/jovyan/.jupyter
 
 # Create work directory

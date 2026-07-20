@@ -4,4 +4,5 @@ pub mod get_challenges_with_notebooks;
 pub mod get_user_submission;
 pub mod start_challenge;
 pub mod submit_challenge;
+pub mod close_challenge_session;
 pub mod get_challenge_submission_leaderboard;

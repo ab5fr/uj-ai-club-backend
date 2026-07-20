@@ -25,7 +25,6 @@ pub async fn admin_update_challenge(
     let title = req.title.unwrap_or(existing.title);
     let description = req.description.unwrap_or(existing.description);
     let week = req.week.unwrap_or(existing.week);
-    let challenge_url = req.challenge_url.unwrap_or(existing.challenge_url);
     let allowed_submissions = req
         .allowed_submissions
         .unwrap_or(existing.allowed_submissions);
@@ -42,15 +41,14 @@ pub async fn admin_update_challenge(
     let challenge: Challenge = sqlx::query_as(
         r#"
         UPDATE challenges 
-        SET title = $1, description = $2, week = $3, challenge_url = $4, allowed_submissions = $5, start_date = $6, end_date = $7, visible = $8, updated_at = NOW()
-        WHERE id = $9
+        SET title = $1, description = $2, week = $3, allowed_submissions = $4, start_date = $5, end_date = $6, visible = $7, updated_at = NOW()
+        WHERE id = $8
         RETURNING *
         "#,
     )
     .bind(&title)
     .bind(&description)
     .bind(week)
-    .bind(&challenge_url)
     .bind(allowed_submissions)
     .bind(start_date)
     .bind(end_date)

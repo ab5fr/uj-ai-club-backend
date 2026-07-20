@@ -3,10 +3,17 @@ use axum::{
     extract::{Path, State},
 };
 
-use crate::{AppState, auth::AuthUser, error::AppError, models::*};
+use crate::{
+    AppState,
+    auth::AuthUser,
+    error::AppError,
+    models::*,
+    submissions::{
+        FinalizeSubmissionParams, effective_allowed_submissions, finalize_in_progress_submission,
+    },
+};
 
 /// Submit a challenge - marks submission as submitted and triggers grading
-/// This endpoint is called from the frontend when the user clicks "Submit"
 pub async fn submit_challenge(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -18,9 +25,14 @@ pub async fn submit_challenge(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    let allowed_submissions = challenge.allowed_submissions.max(1);
+    let allowed_submissions = effective_allowed_submissions(
+        &state.pool,
+        auth.user_id,
+        challenge_id,
+        challenge.allowed_submissions,
+    )
+    .await?;
 
-    // Get the notebook info
     let notebook: ChallengeNotebook =
         sqlx::query_as("SELECT * FROM challenge_notebooks WHERE challenge_id = $1")
             .bind(challenge_id)
@@ -40,7 +52,6 @@ pub async fn submit_challenge(
 
     let attempts_remaining = (allowed_submissions as i64 - attempts_used).max(0);
 
-    // Get latest in-progress attempt
     let submission: Option<ChallengeSubmission> = sqlx::query_as(
         r#"
         SELECT * FROM challenge_submissions
@@ -75,7 +86,7 @@ pub async fn submit_challenge(
         {
             return Ok(Json(SubmitChallengeResponse {
                 success: true,
-                message: "Your submission is pending manual grading by an admin.".to_string(),
+                message: "Your submission is pending grading.".to_string(),
                 status: "grading_pending".to_string(),
                 attempt_number: latest.attempt_number,
                 attempts_used,
@@ -88,73 +99,29 @@ pub async fn submit_challenge(
         ));
     };
 
-    // Get the user's JupyterHub username
-    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = $1")
-        .bind(auth.user_id)
-        .fetch_one(&state.pool)
-        .await?;
-
-    let jupyterhub_username = user
-        .jupyterhub_username
-        .ok_or_else(|| AppError::BadRequest("JupyterHub username not set".to_string()))?;
-
-    // Update submission status to "grading_pending"
-    sqlx::query(
-        r#"
-        UPDATE challenge_submissions
-        SET status = 'grading_pending',
-            submitted_at = NOW(),
-            updated_at = NOW()
-        WHERE id = $1
-        "#,
-    )
-    .bind(submission.id)
-    .execute(&state.pool)
-    .await?;
-
-    // Call JupyterHub API to trigger submission/grading
-    // The grading service will watch for the submission and grade it
-    let grading_service_url = std::env::var("GRADING_SERVICE_URL")
-        .unwrap_or_else(|_| "http://uj-ai-club-grading:9100".to_string());
-
-    // Call grading service API to trigger submission/grading
-    // This copies the notebook from user's workspace to nbgrader exchange and grades it
-    let client = reqwest::Client::new();
-    let trigger_url = format!(
-        "{}/submit/{}/{}",
-        grading_service_url, jupyterhub_username, notebook.assignment_name
-    );
-
-    // Include the notebook filename and path in the request
-    let payload = serde_json::json!({
-        "notebookFilename": notebook.notebook_filename,
-        "notebookPath": notebook.notebook_path
-    });
-
-    match client.post(&trigger_url).json(&payload).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                tracing::info!(
-                    "Grading triggered for user {} on assignment {}",
-                    jupyterhub_username,
-                    notebook.assignment_name
-                );
-            } else {
-                let status = response.status();
-                let error_text = response.text().await.unwrap_or_default();
-                tracing::warn!("Failed to trigger grading: {} - {}", status, error_text);
-            }
-        }
-        Err(e) => {
-            tracing::warn!("Failed to call grading service: {}", e);
-        }
+    if submission.session_revoked_at.is_some() {
+        return Err(AppError::BadRequest(
+            "This attempt has already been submitted.".to_string(),
+        ));
     }
+
+    let message = finalize_in_progress_submission(
+        &state.pool,
+        FinalizeSubmissionParams {
+            submission_id: submission.id,
+            user_id: auth.user_id,
+            notebook_filename: &notebook.notebook_filename,
+            notebook_path: &notebook.notebook_path,
+            assignment_name: &notebook.assignment_name,
+            auto_grade_enabled: notebook.auto_grade_enabled,
+        },
+    )
+    .await?
+    .unwrap_or_else(|| "Your submission is pending grading.".to_string());
 
     Ok(Json(SubmitChallengeResponse {
         success: true,
-        message:
-            "Submission received and marked as grading pending. An admin will review it manually."
-                .to_string(),
+        message,
         status: "grading_pending".to_string(),
         attempt_number: submission.attempt_number,
         attempts_used,

@@ -11,12 +11,18 @@ import json
 import logging
 import subprocess
 import shutil
+import hmac
 import requests
 import threading
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+from notebook_processor import (
+    process_notebook_cells,
+    process_notebook_file,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -31,9 +37,26 @@ COURSE_ID = os.environ.get('COURSE_ID', 'ujaiclub')
 WEBHOOK_URL = os.environ.get('GRADING_WEBHOOK_URL', 'http://backend:8000/webhooks/nbgrader/grade')
 WEBHOOK_SECRET = os.environ.get('NBGRADER_WEBHOOK_SECRET', '')
 DOCKER_SOCKET = os.environ.get('DOCKER_SOCKET', '/var/run/docker.sock')
+GRADING_SERVICE_SECRET = os.environ.get('GRADING_SERVICE_SECRET', '')
 
 # Flask app for HTTP API
 app = Flask(__name__)
+
+
+@app.before_request
+def require_internal_auth():
+    """All endpoints except health require a shared secret from the Rust API."""
+    if request.path == '/health':
+        return None
+
+    if not GRADING_SERVICE_SECRET:
+        return jsonify({'error': 'Grading service secret is not configured'}), 503
+
+    provided = request.headers.get('X-Grading-Service-Secret', '')
+    if not hmac.compare_digest(provided, GRADING_SERVICE_SECRET):
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    return None
 
 
 class SubmissionHandler(FileSystemEventHandler):
@@ -125,46 +148,9 @@ class SubmissionHandler(FileSystemEventHandler):
     
     def get_grades(self, student_id, assignment_name):
         """Get grades from nbgrader for a submission."""
-        try:
-            # Use nbgrader API to get grades
-            cmd = [
-                'nbgrader', 'export',
-                '--to', 'json',
-                '--assignment', assignment_name,
-                '--student', student_id,
-            ]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
-            
-            if result.returncode == 0 and result.stdout:
-                grades_data = json.loads(result.stdout)
-                
-                # Calculate total score
-                total_score = 0
-                max_score = 0
-                
-                for grade in grades_data.get('grades', []):
-                    if grade.get('score') is not None:
-                        total_score += grade['score']
-                    max_score += grade.get('max_score', 0)
-                
-                return {
-                    'score': total_score,
-                    'max_score': max_score,
-                    'details': grades_data
-                }
-            
-            # Fallback: try to parse grades from database directly
-            return self.get_grades_from_db(student_id, assignment_name)
-            
-        except Exception as e:
-            logger.error(f"Error getting grades: {e}")
-            return None
+        # Go directly to the nbgrader SQLite database - the nbgrader export
+        # command doesn't support JSON output, so DB query is the reliable path.
+        return self.get_grades_from_db(student_id, assignment_name)
     
     def get_grades_from_db(self, student_id, assignment_name):
         """Get grades directly from nbgrader SQLite database."""
@@ -314,6 +300,347 @@ class SubmissionHandler(FileSystemEventHandler):
 submission_handler = SubmissionHandler()
 
 
+def find_user_container(student_id):
+    """Find a running JupyterHub container for the given student username."""
+    import docker
+
+    client = docker.from_env()
+    logger.info(f"Looking for container with JUPYTERHUB_USER={student_id}")
+
+    try:
+        containers = client.containers.list(filters={'name': 'ujaiclub'})
+        for container in containers:
+            env_vars = container.attrs.get('Config', {}).get('Env', [])
+            for env in env_vars:
+                if env == f'JUPYTERHUB_USER={student_id}':
+                    logger.info(f"Found container {container.name} for user {student_id}")
+                    return container
+    except Exception as e:
+        logger.info(f"Error searching containers: {e}")
+
+    logger.info(f"No running container found for user: {student_id}")
+    return None
+
+
+def docker_escape(name):
+    """
+    Match dockerspawner's escape() so volume names align with
+    'jupyterhub-user-{username}' mounts (e.g. '_' -> '-5f').
+    """
+    safe = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+    escape_char = "-"
+    out = []
+    for c in name:
+        if c in safe:
+            out.append(c)
+        else:
+            out.append(escape_char)
+            out.append(f"{ord(c):02x}")
+    return "".join(out)
+
+
+def user_work_volume_name(student_id):
+    """Persistent Docker volume mounted at /home/jovyan/work for this user."""
+    return f"jupyterhub-user-{docker_escape(student_id)}"
+
+
+def workspace_has_notebook(student_id, notebook_filename):
+    """Return True if the notebook already exists in the user's work volume/container."""
+    import docker
+
+    container = find_user_container(student_id)
+    if container:
+        exit_code, _ = container.exec_run(
+            ["test", "-f", f"/home/jovyan/work/{notebook_filename}"]
+        )
+        return exit_code == 0
+
+    client = docker.from_env()
+    volume_name = user_work_volume_name(student_id)
+    try:
+        client.containers.run(
+            "alpine:latest",
+            ["test", "-f", f"/data/{notebook_filename}"],
+            volumes={volume_name: {"bind": "/data", "mode": "ro"}},
+            remove=True,
+            detach=False,
+        )
+        return True
+    except docker.errors.ContainerError:
+        # test -f exited non-zero: file missing
+        return False
+    except Exception as e:
+        logger.info(f"Could not check volume {volume_name} for existing notebook: {e}")
+        return False
+
+
+def ensure_user_volume_writable(volume_name):
+    """
+    Docker creates empty named volumes as root:root 755. Jupyter runs as
+    jovyan (1000:100) and needs write access on the work dir for saves,
+    autosave, and checkpoints. Match DockerSpawner's usual ownership.
+    """
+    import docker
+
+    client = docker.from_env()
+    client.containers.run(
+        "alpine:latest",
+        [
+            "sh",
+            "-c",
+            "chown -R 1000:100 /data && chmod 2775 /data && "
+            "mkdir -p /data/.ipynb_checkpoints && "
+            "chown -R 1000:100 /data/.ipynb_checkpoints && "
+            "chmod 2775 /data/.ipynb_checkpoints",
+        ],
+        volumes={volume_name: {"bind": "/data", "mode": "rw"}},
+        remove=True,
+        detach=False,
+    )
+
+
+def write_notebook_to_user_volume(student_id, notebook_filename, notebook_bytes):
+    """
+    Stage a notebook onto the user's persistent work volume even if their
+    Jupyter container is not running yet. DockerSpawner mounts this volume at
+    /home/jovyan/work on spawn, so the file is present on first open.
+    """
+    import docker
+    import tarfile
+    import io
+
+    client = docker.from_env()
+    volume_name = user_work_volume_name(student_id)
+
+    tar_stream = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream, mode="w") as tar:
+        tarinfo = tarfile.TarInfo(name=notebook_filename)
+        tarinfo.size = len(notebook_bytes)
+        tarinfo.uid = 1000  # jovyan
+        tarinfo.gid = 100  # users
+        tarinfo.mode = 0o644
+        tar.addfile(tarinfo, io.BytesIO(notebook_bytes))
+    tar_stream.seek(0)
+
+    # Created (not started) is enough for put_archive into a named volume.
+    temp = client.containers.create(
+        "alpine:latest",
+        command=["true"],
+        volumes={volume_name: {"bind": "/data", "mode": "rw"}},
+    )
+    try:
+        temp.put_archive("/data", tar_stream)
+        logger.info(
+            f"Staged {notebook_filename} onto volume {volume_name} for user {student_id}"
+        )
+    finally:
+        try:
+            temp.remove(force=True)
+        except Exception:
+            pass
+
+    # put_archive sets file uid/gid, but a brand-new volume root stays root:root.
+    ensure_user_volume_writable(volume_name)
+
+
+def write_bytes_to_user_workspace(student_id, relative_path, content_bytes):
+    """Write an arbitrary file into the user's work volume (and running container if any)."""
+    import docker
+    import tarfile
+    import io
+
+    container = find_user_container(student_id)
+    tar_stream = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream, mode="w") as tar:
+        tarinfo = tarfile.TarInfo(name=relative_path)
+        tarinfo.size = len(content_bytes)
+        tarinfo.uid = 1000
+        tarinfo.gid = 100
+        tarinfo.mode = 0o644
+        tar.addfile(tarinfo, io.BytesIO(content_bytes))
+    tar_stream.seek(0)
+
+    if container:
+        # Ensure parent dirs exist for nested paths like .ipynb_checkpoints/...
+        parent = str(Path(relative_path).parent)
+        if parent not in ("", "."):
+            container.exec_run(["mkdir", "-p", f"/home/jovyan/work/{parent}"], user="0")
+        container.put_archive("/home/jovyan/work", tar_stream)
+        return
+
+    write_notebook_to_user_volume(student_id, relative_path, content_bytes)
+
+
+def write_spawn_config(student_id, network_disabled, cpu_limit, memory_limit):
+    """Persist per-challenge spawner settings for JupyterHub pre_spawn_hook."""
+    import json as json_module
+
+    payload = json_module.dumps(
+        {
+            "networkDisabled": bool(network_disabled),
+            "cpuLimit": cpu_limit,
+            "memoryLimit": memory_limit,
+        }
+    ).encode("utf-8")
+    write_bytes_to_user_workspace(student_id, ".ujaiclub_spawn.json", payload)
+    logger.info(
+        f"Wrote spawn config for {student_id}: networkDisabled={network_disabled}, "
+        f"cpuLimit={cpu_limit}, memoryLimit={memory_limit}"
+    )
+
+
+def remove_notebook_from_workspace(student_id, notebook_filename):
+    """Delete a notebook (and its checkpoint) so a new attempt can start fresh."""
+    import docker
+
+    paths = [
+        f"/home/jovyan/work/{notebook_filename}",
+        f"/home/jovyan/work/.ipynb_checkpoints/{Path(notebook_filename).stem}-checkpoint.ipynb",
+    ]
+
+    container = find_user_container(student_id)
+    if container:
+        for path in paths:
+            container.exec_run(["rm", "-f", path], user="0")
+        logger.info(f"Removed existing notebook files for {student_id} in running container")
+        return
+
+    client = docker.from_env()
+    volume_name = user_work_volume_name(student_id)
+    try:
+        client.containers.run(
+            "alpine:latest",
+            [
+                "sh",
+                "-c",
+                f"rm -f /data/{notebook_filename} "
+                f"/data/.ipynb_checkpoints/{Path(notebook_filename).stem}-checkpoint.ipynb",
+            ],
+            volumes={volume_name: {"bind": "/data", "mode": "rw"}},
+            remove=True,
+            detach=False,
+        )
+        logger.info(f"Removed existing notebook files for {student_id} from volume {volume_name}")
+    except Exception as e:
+        logger.warning(f"Could not remove existing notebook for {student_id}: {e}")
+
+
+def force_save_notebooks_in_container(container, notebook_filename=None):
+    """
+    Force-save open notebooks via the Jupyter Contents API inside a user container.
+    Reads the in-memory notebook model (including unsaved edits) and writes it to disk.
+    """
+    import json
+
+    explicit_repr = repr(notebook_filename)
+    script = f'''
+import json
+import subprocess
+import sys
+import urllib.parse
+import urllib.request
+
+EXPLICIT = {explicit_repr}
+
+
+def get_base_url():
+    try:
+        out = subprocess.check_output(
+            ['jupyter', 'server', 'list', '--json'],
+            text=True,
+            timeout=10,
+        )
+        servers = json.loads(out)
+        if isinstance(servers, list):
+            for server in servers:
+                url = server.get('url', '')
+                if url:
+                    return url.rstrip('/')
+    except Exception as exc:
+        print(f"server list failed: {{exc}}", file=sys.stderr)
+    return 'http://127.0.0.1:8888'
+
+
+def api(base, path, method='GET', data=None):
+    url = base + path
+    headers = {{}}
+    body = None
+    if data is not None:
+        headers['Content-Type'] = 'application/json'
+        body = json.dumps(data).encode()
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        if resp.status == 204:
+            return None
+        raw = resp.read()
+        return json.loads(raw) if raw else None
+
+
+base = get_base_url()
+paths = []
+
+try:
+    sessions = api(base, '/api/sessions') or []
+    for session in sessions:
+        path = session.get('path') or (session.get('notebook') or {{}}).get('path')
+        if path and path not in paths:
+            paths.append(path)
+except Exception as exc:
+    print(f"sessions failed: {{exc}}", file=sys.stderr)
+
+if EXPLICIT and EXPLICIT not in paths:
+    paths.append(EXPLICIT)
+
+saved = []
+for path in paths:
+    try:
+        encoded = urllib.parse.quote(path, safe='/')
+        notebook = api(base, f'/api/contents/{{encoded}}?content=1&type=notebook')
+        api(
+            base,
+            f'/api/contents/{{encoded}}',
+            method='PUT',
+            data={{
+                'type': 'notebook',
+                'format': 'json',
+                'content': notebook['content'],
+            }},
+        )
+        saved.append(path)
+    except Exception as exc:
+        print(f"failed to save {{path}}: {{exc}}", file=sys.stderr)
+
+print(json.dumps({{'saved': saved, 'base': base}}))
+'''
+
+    exit_code, output = container.exec_run(['python3', '-c', script])
+    stdout = output.decode('utf-8', errors='replace').strip() if output else ''
+
+    if exit_code != 0:
+        logger.warning(
+            f"Notebook save script exited {exit_code} for {container.name}: {stdout}"
+        )
+        return False, stdout or 'save script failed'
+
+    try:
+        result = json.loads(stdout.splitlines()[-1])
+        saved = result.get('saved', [])
+        logger.info(f"Force-saved notebooks in {container.name}: {saved}")
+        return True, saved
+    except Exception as e:
+        logger.warning(f"Could not parse save script output for {container.name}: {e}")
+        return bool(stdout), stdout
+
+
+def save_user_notebook(student_id, notebook_filename=None):
+    """Save notebooks for a user, whether or not a specific filename is provided."""
+    container = find_user_container(student_id)
+    if not container:
+        return True, 'No running container (notebook may already be on disk)'
+
+    return force_save_notebooks_in_container(container, notebook_filename)
+
+
 def copy_notebook_from_user(student_id, assignment_name, notebook_filename):
     """
     Copy a notebook from a user's JupyterHub container or volume to the exchange directory.
@@ -323,31 +650,7 @@ def copy_notebook_from_user(student_id, assignment_name, notebook_filename):
     
     try:
         client = docker.from_env()
-        
-        # Find the user's container by searching for JUPYTERHUB_USER env var
-        # Container names are escaped by DockerSpawner, so we can't rely on simple name matching
-        logger.info(f"Looking for container with JUPYTERHUB_USER={student_id}")
-        
-        container = None
-        try:
-            # Search all containers with ujaiclub prefix
-            containers = client.containers.list(filters={'name': 'ujaiclub'})
-            for c in containers:
-                # Check if this container belongs to our user
-                env_vars = c.attrs.get('Config', {}).get('Env', [])
-                for env in env_vars:
-                    if env == f'JUPYTERHUB_USER={student_id}':
-                        container = c
-                        logger.info(f"Found container {c.name} for user {student_id}")
-                        break
-                if container:
-                    break
-            
-            if not container:
-                logger.info(f"No running container found for user: {student_id}")
-        except Exception as e:
-            logger.info(f"Error searching containers: {e}")
-            container = None
+        container = find_user_container(student_id)
         
         # Create destination directory in COURSE directory (not exchange)
         # nbgrader autograde expects submissions in /srv/nbgrader/course/submitted/
@@ -390,8 +693,7 @@ def copy_notebook_from_user(student_id, assignment_name, notebook_filename):
                 logger.info(f"Notebook not found in container, trying volume")
         
         # Fallback: Try to get from user's persistent volume
-        # Volume name format: jupyterhub-user-{username}
-        volume_name = f"jupyterhub-user-{student_id}"
+        volume_name = user_work_volume_name(student_id)
         logger.info(f"Trying to access volume: {volume_name}")
         
         try:
@@ -435,20 +737,31 @@ def prepare_notebook_for_user(student_id, assignment_name):
     """
     Prepare a notebook for a user by copying it to their JupyterHub workspace.
     This should be called when a user starts a challenge.
-    
+
+    If the user container is not running yet, the notebook is staged onto their
+    persistent Docker volume so it exists when JupyterHub spawns.
+
     Expected JSON payload:
     {
         "notebookPath": "uploads/notebooks/uuid_filename.ipynb",
-        "notebookFilename": "original_filename.ipynb"
+        "notebookFilename": "original_filename.ipynb",
+        "networkDisabled": true,
+        "cpuLimit": 0.5,
+        "memoryLimit": "512M",
+        "forceFresh": false
     }
     """
-    import docker
-    
     logger.info(f"Preparing notebook for user {student_id}, assignment {assignment_name}")
     
     data = request.get_json() or {}
     notebook_path = data.get('notebookPath')  # Path in uploads
     notebook_filename = data.get('notebookFilename')  # Clean filename for user
+    force_fresh = bool(data.get('forceFresh', False))
+    network_disabled = data.get('networkDisabled', True)
+    if isinstance(network_disabled, str):
+        network_disabled = network_disabled.lower() in ('1', 'true', 'yes')
+    cpu_limit = data.get('cpuLimit', 0.5)
+    memory_limit = data.get('memoryLimit', '512M')
     
     if not notebook_path or not notebook_filename:
         return jsonify({
@@ -457,29 +770,23 @@ def prepare_notebook_for_user(student_id, assignment_name):
         }), 400
     
     try:
-        client = docker.from_env()
-        
-        # Find the user's container
-        logger.info(f"Looking for container with JUPYTERHUB_USER={student_id}")
-        
-        container = None
-        containers = client.containers.list(filters={'name': 'ujaiclub'})
-        for c in containers:
-            env_vars = c.attrs.get('Config', {}).get('Env', [])
-            for env in env_vars:
-                if env == f'JUPYTERHUB_USER={student_id}':
-                    container = c
-                    logger.info(f"Found container {c.name} for user {student_id}")
-                    break
-            if container:
-                break
-        
-        if not container:
+        # Always refresh spawner settings (network/CPU/memory) for the next spawn.
+        write_spawn_config(student_id, network_disabled, cpu_limit, memory_limit)
+
+        # Preserve in-progress student work on Continue / re-open.
+        if workspace_has_notebook(student_id, notebook_filename) and not force_fresh:
+            logger.info(
+                f"Notebook {notebook_filename} already exists for {student_id}; skipping copy"
+            )
             return jsonify({
-                'success': False,
-                'error': f'No running container found for user {student_id}. Please start your JupyterHub session first.'
-            }), 404
-        
+                'success': True,
+                'message': f'Notebook {notebook_filename} already present for user {student_id}',
+                'skipped': True,
+            })
+
+        if force_fresh and workspace_has_notebook(student_id, notebook_filename):
+            remove_notebook_from_workspace(student_id, notebook_filename)
+
         # Read the source notebook from the shared volume
         # The notebook path is relative to uploads, mounted at /srv/notebooks
         source_path = f"/srv/notebooks/{notebook_path.replace('uploads/', '')}"
@@ -497,98 +804,40 @@ def prepare_notebook_for_user(student_id, assignment_name):
         
         # Read and process the notebook (remove solutions for students)
         import json as json_module
-        
-        with open(source_path, 'r', encoding='utf-8') as f:
-            notebook = json_module.load(f)
-        
-        # Process notebook inline to create student version
-        def remove_solution_code(source):
-            lines = source.split('\n')
-            result = []
-            in_solution = False
-            indent = ""
-            for line in lines:
-                if '### BEGIN SOLUTION' in line or '# BEGIN SOLUTION' in line:
-                    in_solution = True
-                    indent = line[:len(line) - len(line.lstrip())]
-                    result.append(indent + '# YOUR CODE HERE')
-                    result.append(indent + 'raise NotImplementedError()')
-                    continue
-                elif '### END SOLUTION' in line or '# END SOLUTION' in line:
-                    in_solution = False
-                    continue
-                if not in_solution:
-                    result.append(line)
-            return '\n'.join(result)
-        
-        def remove_hidden_tests(source):
-            lines = source.split('\n')
-            result = []
-            in_hidden = False
-            for line in lines:
-                if '### BEGIN HIDDEN TESTS' in line or '# BEGIN HIDDEN TESTS' in line:
-                    in_hidden = True
-                    continue
-                elif '### END HIDDEN TESTS' in line or '# END HIDDEN TESTS' in line:
-                    in_hidden = False
-                    continue
-                if not in_hidden:
-                    result.append(line)
-            return '\n'.join(result)
-        
-        # Process each cell
-        for cell in notebook.get('cells', []):
-            if cell.get('cell_type') == 'code':
-                if isinstance(cell.get('source'), list):
-                    source = ''.join(cell.get('source', []))
-                else:
-                    source = cell.get('source', '')
-                
-                if '### BEGIN SOLUTION' in source or '# BEGIN SOLUTION' in source:
-                    source = remove_solution_code(source)
-                    cell['source'] = source
-                
-                if '### BEGIN HIDDEN TESTS' in source or '# BEGIN HIDDEN TESTS' in source:
-                    if isinstance(cell.get('source'), list):
-                        source = ''.join(cell.get('source', []))
-                    else:
-                        source = cell.get('source', '')
-                    source = remove_hidden_tests(source)
-                    cell['source'] = source
-            
-            # Clear outputs
-            if 'outputs' in cell:
-                cell['outputs'] = []
-            if 'execution_count' in cell:
-                cell['execution_count'] = None
-        
-        processed_content = json_module.dumps(notebook, indent=1)
-        
-        # Copy to user's container
         import tarfile
         import io
         
-        # Create a tar archive with the notebook
-        # Set proper ownership (jovyan user: uid=1000, gid=100)
-        tar_stream = io.BytesIO()
-        with tarfile.open(fileobj=tar_stream, mode='w') as tar:
-            notebook_bytes = processed_content.encode('utf-8')
-            tarinfo = tarfile.TarInfo(name=notebook_filename)
-            tarinfo.size = len(notebook_bytes)
-            tarinfo.uid = 1000  # jovyan user
-            tarinfo.gid = 100   # users group
-            tarinfo.mode = 0o644  # rw-r--r--
-            tar.addfile(tarinfo, io.BytesIO(notebook_bytes))
-        tar_stream.seek(0)
-        
-        # Put the file in the user's work directory
-        container.put_archive('/home/jovyan/work', tar_stream)
-        
-        logger.info(f"Successfully copied {notebook_filename} to user {student_id}'s workspace")
+        with open(source_path, 'r', encoding='utf-8') as f:
+            notebook = json_module.load(f)
+
+        process_notebook_cells(notebook)
+        notebook_bytes = json_module.dumps(notebook, indent=1).encode('utf-8')
+
+        container = find_user_container(student_id)
+
+        if container:
+            tar_stream = io.BytesIO()
+            with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                tarinfo = tarfile.TarInfo(name=notebook_filename)
+                tarinfo.size = len(notebook_bytes)
+                tarinfo.uid = 1000  # jovyan user
+                tarinfo.gid = 100   # users group
+                tarinfo.mode = 0o644  # rw-r--r--
+                tar.addfile(tarinfo, io.BytesIO(notebook_bytes))
+            tar_stream.seek(0)
+            container.put_archive('/home/jovyan/work', tar_stream)
+            logger.info(
+                f"Successfully copied {notebook_filename} to user {student_id}'s running container"
+            )
+        else:
+            # First start: container does not exist yet. Stage onto the volume
+            # that DockerSpawner will mount at /home/jovyan/work.
+            write_notebook_to_user_volume(student_id, notebook_filename, notebook_bytes)
         
         return jsonify({
             'success': True,
-            'message': f'Notebook {notebook_filename} prepared for user {student_id}'
+            'message': f'Notebook {notebook_filename} prepared for user {student_id}',
+            'fresh': force_fresh,
         })
         
     except Exception as e:
@@ -597,6 +846,60 @@ def prepare_notebook_for_user(student_id, assignment_name):
             'success': False,
             'error': str(e)
         }), 500
+
+
+@app.route('/stop-user/<student_id>', methods=['POST'])
+def stop_user_server(student_id):
+    """
+    Stop a student's JupyterHub single-user container via Docker.
+    Used as a reliable shutdown path after submit when Hub RBAC may block DELETE.
+    """
+    logger.info(f"Stopping Jupyter container for user {student_id}")
+    try:
+        container = find_user_container(student_id)
+        if not container:
+            return jsonify({
+                'success': True,
+                'message': f'No running container for {student_id}',
+                'stopped': False,
+            })
+
+        name = container.name
+        container.stop(timeout=10)
+        try:
+            container.remove(force=True)
+        except Exception as remove_err:
+            logger.warning(f"Container {name} stopped but remove failed: {remove_err}")
+
+        logger.info(f"Stopped and removed container {name} for user {student_id}")
+        return jsonify({
+            'success': True,
+            'message': f'Stopped container {name}',
+            'stopped': True,
+        })
+    except Exception as e:
+        logger.error(f"Error stopping user container for {student_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/save-notebook/<student_id>', methods=['POST'])
+def save_notebook(student_id):
+    """
+    Force-save the student's open notebook(s) to disk before closing Jupyter.
+    """
+    data = request.get_json() or {}
+    notebook_filename = data.get('notebookFilename')
+
+    logger.info(f"Saving notebook(s) for user {student_id}")
+
+    success, result = save_user_notebook(student_id, notebook_filename)
+
+    return jsonify({
+        'success': success,
+        'message': 'Notebook saved' if success else 'Notebook save failed',
+        'saved': result if isinstance(result, list) else [],
+        'detail': result if isinstance(result, str) else None,
+    }), 200 if success else 500
 
 
 @app.route('/submit/<student_id>/<assignment_name>', methods=['POST'])
@@ -631,6 +934,11 @@ def submit_for_grading(student_id, assignment_name):
         except Exception as e:
             logger.error(f"Failed to set up source assignment: {e}")
     
+    # Flush in-memory edits to disk before copying from the container/volume.
+    save_success, save_result = save_user_notebook(student_id, notebook_filename)
+    if not save_success:
+        logger.warning(f"Pre-submit save failed for {student_id}: {save_result}")
+
     # Copy notebook from user container to course/submitted
     success, result = copy_notebook_from_user(student_id, assignment_name, notebook_filename)
     
@@ -765,6 +1073,59 @@ def setup_assignment(assignment_name):
             'success': False,
             'error': str(e)
         }), 500
+
+
+@app.route('/cleanup-assignment/<assignment_name>', methods=['DELETE'])
+def cleanup_assignment(assignment_name):
+    """
+    Remove all nbgrader directories for an assignment when a challenge is deleted.
+    Cleans up: source, release, submitted, autograded, and feedback directories.
+    """
+    logger.info(f"Cleaning up assignment: {assignment_name}")
+
+    course_dir = Path('/srv/nbgrader/course')
+    removed = []
+    errors = []
+
+    # Remove top-level assignment directories
+    for subdir_name in ['source', 'release']:
+        d = course_dir / subdir_name / assignment_name
+        if d.exists():
+            try:
+                shutil.rmtree(str(d))
+                removed.append(str(d))
+                logger.info(f"Removed directory: {d}")
+            except Exception as e:
+                errors.append(f"{d}: {e}")
+                logger.error(f"Failed to remove {d}: {e}")
+
+    # Remove per-student directories (submitted/student_id/assignment, etc.)
+    for subdir_name in ['submitted', 'autograded', 'feedback']:
+        subdir = course_dir / subdir_name
+        if subdir.exists():
+            for student_dir in subdir.iterdir():
+                assignment_dir = student_dir / assignment_name
+                if assignment_dir.exists():
+                    try:
+                        shutil.rmtree(str(assignment_dir))
+                        removed.append(str(assignment_dir))
+                        logger.info(f"Removed student directory: {assignment_dir}")
+                    except Exception as e:
+                        errors.append(f"{assignment_dir}: {e}")
+                        logger.error(f"Failed to remove {assignment_dir}: {e}")
+
+    if errors:
+        return jsonify({
+            'success': False,
+            'removed': removed,
+            'errors': errors,
+        }), 500
+
+    return jsonify({
+        'success': True,
+        'message': f'Assignment {assignment_name} cleaned up',
+        'removed': removed,
+    })
 
 
 def setup_nbgrader_assignment(source_notebook_path, assignment_name, course_dir='/srv/nbgrader/course'):
@@ -943,100 +1304,8 @@ def add_nbgrader_metadata(source_path, output_path):
 
 
 def process_notebook_for_students(source_path, output_path):
-    """
-    Process a source notebook to create a student version.
-    Removes solution code and hidden tests.
-    """
-    import json
-    
-    def remove_solution_code(source):
-        """Remove code between ### BEGIN SOLUTION and ### END SOLUTION markers."""
-        lines = source.split('\n')
-        result = []
-        in_solution = False
-        indent = ""
-        
-        for line in lines:
-            if '### BEGIN SOLUTION' in line or '# BEGIN SOLUTION' in line:
-                in_solution = True
-                # Detect indentation
-                indent = line[:len(line) - len(line.lstrip())]
-                result.append(indent + '# YOUR CODE HERE')
-                result.append(indent + 'raise NotImplementedError()')
-                continue
-            elif '### END SOLUTION' in line or '# END SOLUTION' in line:
-                in_solution = False
-                continue
-            
-            if not in_solution:
-                result.append(line)
-        
-        return '\n'.join(result)
-    
-    def remove_hidden_tests(source):
-        """Remove code between ### BEGIN HIDDEN TESTS and ### END HIDDEN TESTS markers."""
-        lines = source.split('\n')
-        result = []
-        in_hidden = False
-        
-        for line in lines:
-            if '### BEGIN HIDDEN TESTS' in line or '# BEGIN HIDDEN TESTS' in line:
-                in_hidden = True
-                continue
-            elif '### END HIDDEN TESTS' in line or '# END HIDDEN TESTS' in line:
-                in_hidden = False
-                continue
-            
-            if not in_hidden:
-                result.append(line)
-        
-        return '\n'.join(result)
-    
-    try:
-        with open(source_path, 'r', encoding='utf-8') as f:
-            notebook = json.load(f)
-    except Exception as e:
-        logger.error(f"Error reading notebook: {e}")
-        # Just copy as-is if we can't parse
-        import shutil
-        shutil.copy2(source_path, output_path)
-        return
-    
-    # Process each cell
-    for cell in notebook.get('cells', []):
-        if cell.get('cell_type') == 'code':
-            # Handle both string and list source formats
-            if isinstance(cell.get('source'), list):
-                source = ''.join(cell.get('source', []))
-            else:
-                source = cell.get('source', '')
-            
-            # Check if this is a solution cell
-            if '### BEGIN SOLUTION' in source or '# BEGIN SOLUTION' in source:
-                processed = remove_solution_code(source)
-                cell['source'] = processed
-            
-            # Check if this has hidden tests
-            if '### BEGIN HIDDEN TESTS' in source or '# BEGIN HIDDEN TESTS' in source:
-                # Re-read source in case it was modified
-                if isinstance(cell.get('source'), list):
-                    source = ''.join(cell.get('source', []))
-                else:
-                    source = cell.get('source', '')
-                processed = remove_hidden_tests(source)
-                cell['source'] = processed
-        
-        # Clear outputs
-        if 'outputs' in cell:
-            cell['outputs'] = []
-        if 'execution_count' in cell:
-            cell['execution_count'] = None
-    
-    # Write the processed notebook
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(notebook, f, indent=1)
-    
-    logger.info(f"Processed notebook saved to: {output_path}")
+    """Process a source notebook to create a student version."""
+    process_notebook_file(source_path, output_path)
 
 
 def run_watcher():

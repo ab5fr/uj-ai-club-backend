@@ -5,6 +5,8 @@ services:
     env_file: .env
     environment:
       GRADING_SERVICE_URL: http://grading:9100
+      GRADING_SERVICE_SECRET: ${GRADING_SERVICE_SECRET}
+      JUPYTERHUB_API_URL: http://jupyterhub:8000
     volumes:
       - uploads_data:/app/uploads
     ports:
@@ -19,6 +21,7 @@ services:
     env_file: .env
     environment:
       DOCKER_NETWORK_NAME: internal
+      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:8000}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - nbgrader_exchange:/srv/nbgrader/exchange
@@ -34,6 +37,9 @@ services:
       context: ./jupyterhub
       dockerfile: Dockerfile.grading
     env_file: .env
+    environment:
+      GRADING_SERVICE_SECRET: ${GRADING_SERVICE_SECRET}
+      GRADING_WEBHOOK_URL: http://host.docker.internal:8000/webhooks/nbgrader/grade
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - uploads_data:/srv/notebooks

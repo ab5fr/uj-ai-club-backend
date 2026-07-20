@@ -30,6 +30,5 @@ pub async fn get_current_challenge(
         week: challenge.week,
         title: challenge.title,
         description: challenge.description,
-        challenge_url: challenge.challenge_url,
     }))
 }

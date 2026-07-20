@@ -1,11 +1,12 @@
 use axum::{
     extract::{FromRef, FromRequestParts},
-    http::{HeaderMap, header::AUTHORIZATION, request::Parts},
+    http::{header::AUTHORIZATION, request::Parts, HeaderMap},
 };
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::env;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{AppState, error::AppError, firebase};
@@ -44,18 +45,66 @@ pub fn extract_bearer_token(parts: &Parts) -> Result<String, AppError> {
     extract_bearer_from_headers(&parts.headers)
 }
 
-/// Claims for JupyterHub SSO token
-#[derive(Debug, Serialize, Deserialize)]
+/// Claims for JupyterHub SSO / admin tokens
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct JupyterHubClaims {
-    pub sub: String,      // User ID
-    pub username: String, // JupyterHub username
-    pub exp: i64,         // Expiration
-    pub iat: i64,         // Issued at
-    pub purpose: String,  // "jupyterhub_sso"
+    pub sub: String,
+    pub username: String,
+    pub exp: i64,
+    pub iat: i64,
+    pub purpose: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jti: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submission_id: Option<String>,
 }
 
-/// Create a JWT token for JupyterHub SSO authentication
-/// This token has a shorter lifespan (1 hour) and includes the JupyterHub username
+pub fn decode_jupyterhub_token(token: &str) -> Result<JupyterHubClaims, AppError> {
+    let token_data = decode::<JupyterHubClaims>(token, &KEYS.decoding, &Validation::default())
+        .map_err(|_| AppError::AuthError)?;
+    Ok(token_data.claims)
+}
+
+pub fn create_jupyterhub_session_token(
+    user_id: Uuid,
+    jupyterhub_username: &str,
+    submission_id: Uuid,
+    jti: &str,
+    expires_at: OffsetDateTime,
+) -> Result<String, AppError> {
+    let now = OffsetDateTime::now_utc();
+    let claims = JupyterHubClaims {
+        sub: user_id.to_string(),
+        username: jupyterhub_username.to_string(),
+        exp: expires_at.unix_timestamp(),
+        iat: now.unix_timestamp(),
+        purpose: "jupyterhub_sso".to_string(),
+        jti: Some(jti.to_string()),
+        submission_id: Some(submission_id.to_string()),
+    };
+
+    encode(&Header::default(), &claims, &KEYS.encoding).map_err(|e| AppError::InternalError(e.into()))
+}
+
+pub fn create_jupyterhub_admin_token(
+    user_id: Uuid,
+    admin_username: &str,
+) -> Result<String, AppError> {
+    let now = chrono::Utc::now();
+    let claims = JupyterHubClaims {
+        sub: user_id.to_string(),
+        username: admin_username.to_string(),
+        exp: (now + chrono::Duration::hours(1)).timestamp(),
+        iat: now.timestamp(),
+        purpose: "jupyterhub_admin".to_string(),
+        jti: None,
+        submission_id: None,
+    };
+
+    encode(&Header::default(), &claims, &KEYS.encoding).map_err(|e| AppError::InternalError(e.into()))
+}
+
+/// Backward-compatible helper for legacy call sites
 pub fn create_jupyterhub_token(
     user_id: Uuid,
     jupyterhub_username: &str,
@@ -67,23 +116,11 @@ pub fn create_jupyterhub_token(
         exp: (now + chrono::Duration::hours(1)).timestamp(),
         iat: now.timestamp(),
         purpose: "jupyterhub_sso".to_string(),
+        jti: None,
+        submission_id: None,
     };
 
-    encode(&Header::default(), &claims, &KEYS.encoding)
-        .map_err(|e| AppError::InternalError(e.into()))
-}
-
-/// Verify and decode a JupyterHub SSO token
-/// Returns the claims if valid
-pub fn verify_jupyterhub_token(token: &str) -> Result<JupyterHubClaims, AppError> {
-    let token_data = decode::<JupyterHubClaims>(token, &KEYS.decoding, &Validation::default())
-        .map_err(|_| AppError::AuthError)?;
-
-    if token_data.claims.purpose != "jupyterhub_sso" {
-        return Err(AppError::AuthError);
-    }
-
-    Ok(token_data.claims)
+    encode(&Header::default(), &claims, &KEYS.encoding).map_err(|e| AppError::InternalError(e.into()))
 }
 
 async fn resolve_user_id(state: &AppState, token: &str) -> Result<Uuid, AppError> {

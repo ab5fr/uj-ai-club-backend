@@ -33,6 +33,8 @@ pub async fn upload_user_avatar(
                 .await
                 .map_err(|e| AppError::InternalError(e.into()))?;
 
+            crate::handlers::admin::upload::validate_image_upload(&file_name, &data)?;
+
             // Create uploads directory if it doesn't exist
             tokio::fs::create_dir_all("uploads/avatars")
                 .await

@@ -5,7 +5,8 @@ use axum::{
 
 use crate::{
     AppState, auth::AdminUser, error::AppError,
-    handlers::webhooks::update_user_ranks::update_user_ranks, models::*,
+    submissions::{apply_grade, ApplyGradeParams},
+    models::*,
 };
 
 pub async fn admin_grade_submission(
@@ -20,37 +21,18 @@ pub async fn admin_grade_submission(
         ));
     }
 
-    #[derive(sqlx::FromRow)]
-    struct GradeTarget {
-        user_id: uuid::Uuid,
-        points_awarded: i32,
-        points_credited: bool,
-        max_points: i32,
-        status: String,
-    }
+    let status: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM challenge_submissions WHERE id = $1")
+            .bind(submission_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
-    let target: GradeTarget = sqlx::query_as(
-        r#"
-        SELECT
-            cs.user_id,
-            cs.points_awarded,
-            cs.points_credited,
-            cn.max_points,
-            cs.status
-        FROM challenge_submissions cs
-        JOIN challenge_notebooks cn ON cn.id = cs.notebook_id
-        WHERE cs.id = $1
-        "#,
-    )
-    .bind(submission_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let status = status.ok_or(AppError::NotFound)?.0;
 
-    if target.status != "grading_pending"
-        && target.status != "graded"
-        && target.status != "submitted"
-        && target.status != "grading"
+    if status != "grading_pending"
+        && status != "graded"
+        && status != "submitted"
+        && status != "grading"
     {
         return Err(AppError::BadRequest(
             "Only submitted, grading, grading_pending, or graded submissions can be manually graded"
@@ -58,45 +40,16 @@ pub async fn admin_grade_submission(
         ));
     }
 
-    let points_awarded = ((req.score / 100.0) * target.max_points as f64).round() as i32;
-    let delta_points = if target.points_credited {
-        points_awarded - target.points_awarded
-    } else {
-        points_awarded
-    };
-
-    let updated_submission: ChallengeSubmission = sqlx::query_as(
-        r#"
-        UPDATE challenge_submissions
-        SET status = 'graded',
-            score = $1,
-            max_score = 100.0,
-            points_awarded = $2,
-            points_credited = true,
-            graded_at = NOW(),
-            manual_graded_by = $3,
-            manual_graded_at = NOW(),
-            updated_at = NOW()
-        WHERE id = $4
-        RETURNING *
-        "#,
+    let updated_submission = apply_grade(
+        &state.pool,
+        ApplyGradeParams {
+            submission_id,
+            score: req.score,
+            max_score: 100.0,
+            manual_graded_by: Some(auth.user_id),
+        },
     )
-    .bind(req.score)
-    .bind(points_awarded)
-    .bind(auth.user_id)
-    .bind(submission_id)
-    .fetch_one(&state.pool)
     .await?;
-
-    if delta_points != 0 {
-        sqlx::query("UPDATE users SET points = points + $1 WHERE id = $2")
-            .bind(delta_points)
-            .bind(target.user_id)
-            .execute(&state.pool)
-            .await?;
-    }
-
-    update_user_ranks(&state.pool).await?;
 
     #[derive(sqlx::FromRow)]
     struct AdminSubmissionRow {

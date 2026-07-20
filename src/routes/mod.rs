@@ -13,7 +13,20 @@ pub fn api_routes() -> Router<AppState> {
         .merge(challenge_routes())
         .merge(user_routes())
         .merge(webhook_routes())
+        .merge(internal_routes())
         .merge(admin_routes())
+}
+
+fn internal_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/internal/jupyterhub/validate-token",
+            post(handlers::validate_jupyterhub_token),
+        )
+        .route(
+            "/internal/jupyterhub/validate-spawn",
+            post(handlers::validate_jupyterhub_spawn),
+        )
 }
 
 fn health_routes() -> Router<AppState> {
@@ -33,6 +46,8 @@ fn public_routes() -> Router<AppState> {
         .route("/resources/{id}", get(handlers::get_resource_by_id))
         .route("/certificates", get(handlers::get_certificates))
         .route("/certificates/{id}", get(handlers::get_certificate_by_id))
+        .route("/articles", get(handlers::get_articles))
+        .route("/articles/{slug}", get(handlers::get_article_by_slug))
         .route("/contact", post(handlers::create_contact))
 }
 
@@ -54,6 +69,10 @@ fn challenge_routes() -> Router<AppState> {
         )
         .route("/challenges/{id}/start", post(handlers::start_challenge))
         .route("/challenges/{id}/submit", post(handlers::submit_challenge))
+        .route(
+            "/challenges/{id}/close-session",
+            post(handlers::close_challenge_session),
+        )
 }
 
 fn user_routes() -> Router<AppState> {
@@ -116,6 +135,27 @@ fn admin_routes() -> Router<AppState> {
             "/admin/certificates/{id}/visibility",
             patch(handlers::admin_patch_certificate_visibility),
         )
+        .route("/admin/articles", get(handlers::admin_get_articles))
+        .route(
+            "/admin/articles",
+            post(handlers::admin_create_article_multipart),
+        )
+        .route(
+            "/admin/articles/{id}",
+            get(handlers::admin_get_article_by_id),
+        )
+        .route(
+            "/admin/articles/{id}",
+            put(handlers::admin_update_article_multipart),
+        )
+        .route(
+            "/admin/articles/{id}",
+            delete(handlers::admin_delete_article),
+        )
+        .route(
+            "/admin/articles/{id}/visibility",
+            patch(handlers::admin_patch_article_visibility),
+        )
         .route("/admin/challenges", get(handlers::admin_get_challenges))
         .route("/admin/challenges", post(handlers::admin_create_challenge))
         .route(
@@ -148,14 +188,6 @@ fn admin_routes() -> Router<AppState> {
             "/admin/notebooks/{id}",
             delete(handlers::admin_delete_notebook),
         )
-        .route(
-            "/admin/notebooks/{id}/edit",
-            get(handlers::admin_get_notebook_edit_url),
-        )
-        .route(
-            "/admin/notebooks/{id}/sync",
-            post(handlers::admin_sync_notebook_to_nbgrader),
-        )
         .route("/admin/submissions", get(handlers::admin_get_submissions))
         .route(
             "/admin/submissions/{id}/access",
@@ -168,6 +200,14 @@ fn admin_routes() -> Router<AppState> {
         .route(
             "/admin/submissions/{id}/grade",
             post(handlers::admin_grade_submission),
+        )
+        .route(
+            "/admin/submissions/{id}",
+            delete(handlers::admin_delete_submission),
+        )
+        .route(
+            "/admin/submissions/{id}/grant-attempts",
+            post(handlers::admin_grant_attempts),
         )
         .route(
             "/admin/contact-messages",

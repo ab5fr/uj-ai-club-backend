@@ -161,6 +161,19 @@ pub struct Certificate {
     pub updated_at: time::OffsetDateTime,
 }
 
+#[derive(Debug, Serialize, FromRow)]
+pub struct Article {
+    pub id: i32,
+    pub title: String,
+    pub slug: String,
+    pub excerpt: Option<String>,
+    pub body: String,
+    pub cover_image: Option<String>,
+    pub visible: bool,
+    pub created_at: time::OffsetDateTime,
+    pub updated_at: time::OffsetDateTime,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ResourceListResponse {
     pub id: i32,
@@ -216,6 +229,49 @@ pub struct CertificateDetailResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ArticleListResponse {
+    pub id: i32,
+    pub title: String,
+    pub slug: String,
+    pub excerpt: Option<String>,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<String>,
+    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
+    pub created_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ArticleDetailResponse {
+    pub id: i32,
+    pub title: String,
+    pub slug: String,
+    pub excerpt: Option<String>,
+    pub body: String,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<String>,
+    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
+    pub created_at: time::OffsetDateTime,
+    #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
+    pub updated_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AdminArticleResponse {
+    pub id: i32,
+    pub title: String,
+    pub slug: String,
+    pub excerpt: Option<String>,
+    pub body: String,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<String>,
+    pub visible: bool,
+    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
+    pub created_at: time::OffsetDateTime,
+    #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
+    pub updated_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Serialize)]
 pub struct InstructorResponse {
     pub name: String,
     pub image: Option<String>,
@@ -233,7 +289,6 @@ pub struct Challenge {
     pub week: i32,
     pub title: String,
     pub description: String,
-    pub challenge_url: String,
     pub allowed_submissions: i32,
     pub is_current: bool,
     pub start_date: Option<time::OffsetDateTime>,
@@ -249,8 +304,6 @@ pub struct ChallengeResponse {
     pub week: i32,
     pub title: String,
     pub description: String,
-    #[serde(rename = "challengeUrl")]
-    pub challenge_url: String,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -484,8 +537,6 @@ pub struct AdminCreateChallengeRequest {
     pub title: String,
     pub description: String,
     pub week: Option<i32>,
-    #[serde(rename = "challengeUrl")]
-    pub challenge_url: Option<String>,
     #[serde(rename = "allowedSubmissions")]
     pub allowed_submissions: Option<i32>,
     #[serde(rename = "startDate", deserialize_with = "date_format::deserialize")]
@@ -500,8 +551,6 @@ pub struct AdminUpdateChallengeRequest {
     pub title: Option<String>,
     pub description: Option<String>,
     pub week: Option<i32>,
-    #[serde(rename = "challengeUrl")]
-    pub challenge_url: Option<String>,
     #[serde(rename = "allowedSubmissions")]
     pub allowed_submissions: Option<i32>,
     #[serde(rename = "startDate", deserialize_with = "date_format::deserialize")]
@@ -577,6 +626,7 @@ pub struct ChallengeNotebook {
     pub memory_limit: String,
     pub time_limit_minutes: i32,
     pub network_disabled: bool,
+    pub auto_grade_enabled: bool,
     pub created_at: time::OffsetDateTime,
     pub updated_at: time::OffsetDateTime,
 }
@@ -599,6 +649,9 @@ pub struct ChallengeSubmission {
     pub graded_at: Option<time::OffsetDateTime>,
     pub manual_graded_by: Option<Uuid>,
     pub manual_graded_at: Option<time::OffsetDateTime>,
+    pub session_jti: Option<String>,
+    pub session_expires_at: Option<time::OffsetDateTime>,
+    pub session_revoked_at: Option<time::OffsetDateTime>,
     pub created_at: time::OffsetDateTime,
     pub updated_at: time::OffsetDateTime,
 }
@@ -671,6 +724,20 @@ pub struct ChallengeWithNotebookResponse {
     pub start_date: Option<time::OffsetDateTime>,
     #[serde(rename = "endDate", serialize_with = "iso8601_option::serialize")]
     pub end_date: Option<time::OffsetDateTime>,
+    #[serde(rename = "submissionStatus")]
+    pub submission_status: Option<String>,
+    #[serde(rename = "sessionExpiresAt", serialize_with = "iso8601_option::serialize")]
+    pub session_expires_at: Option<time::OffsetDateTime>,
+    #[serde(rename = "canStart")]
+    pub can_start: bool,
+    #[serde(rename = "canSubmit")]
+    pub can_submit: bool,
+    #[serde(rename = "canContinue")]
+    pub can_continue: bool,
+    #[serde(rename = "attemptsUsed")]
+    pub attempts_used: i64,
+    #[serde(rename = "attemptsRemaining")]
+    pub attempts_remaining: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -698,6 +765,14 @@ pub struct UserSubmissionResponse {
     pub attempts_used: i64,
     #[serde(rename = "attemptsRemaining")]
     pub attempts_remaining: i64,
+    #[serde(rename = "sessionExpiresAt", serialize_with = "iso8601_option::serialize")]
+    pub session_expires_at: Option<time::OffsetDateTime>,
+    #[serde(rename = "canSubmit")]
+    pub can_submit: bool,
+    #[serde(rename = "canStart")]
+    pub can_start: bool,
+    #[serde(rename = "canContinue")]
+    pub can_continue: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -714,6 +789,9 @@ pub struct StartChallengeResponse {
     #[serde(rename = "attemptsRemaining")]
     pub attempts_remaining: i64,
     pub token: String,
+    pub status: String,
+    #[serde(rename = "sessionExpiresAt", serialize_with = "iso8601::serialize")]
+    pub session_expires_at: time::OffsetDateTime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -754,6 +832,14 @@ pub struct SubmitChallengeResponse {
     pub attempts_remaining: i64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct CloseChallengeSessionResponse {
+    pub success: bool,
+    pub message: String,
+    #[serde(rename = "serverStopped")]
+    pub server_stopped: bool,
+}
+
 // Admin types for notebook management
 
 #[derive(Debug, Serialize)]
@@ -777,6 +863,8 @@ pub struct AdminChallengeNotebookResponse {
     pub time_limit_minutes: i32,
     #[serde(rename = "networkDisabled")]
     pub network_disabled: bool,
+    #[serde(rename = "autoGradeEnabled")]
+    pub auto_grade_enabled: bool,
     #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
     pub created_at: time::OffsetDateTime,
     #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
@@ -787,8 +875,6 @@ pub struct AdminChallengeNotebookResponse {
 pub struct AdminCreateNotebookRequest {
     #[serde(rename = "challengeId")]
     pub challenge_id: i32,
-    #[serde(rename = "assignmentName")]
-    pub assignment_name: String,
     #[serde(rename = "maxPoints")]
     pub max_points: Option<i32>,
     #[serde(rename = "cpuLimit")]
@@ -799,12 +885,12 @@ pub struct AdminCreateNotebookRequest {
     pub time_limit_minutes: Option<i32>,
     #[serde(rename = "networkDisabled")]
     pub network_disabled: Option<bool>,
+    #[serde(rename = "autoGradeEnabled")]
+    pub auto_grade_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct AdminUpdateNotebookRequest {
-    #[serde(rename = "assignmentName")]
-    pub assignment_name: Option<String>,
     #[serde(rename = "maxPoints")]
     pub max_points: Option<i32>,
     #[serde(rename = "cpuLimit")]
@@ -815,6 +901,14 @@ pub struct AdminUpdateNotebookRequest {
     pub time_limit_minutes: Option<i32>,
     #[serde(rename = "networkDisabled")]
     pub network_disabled: Option<bool>,
+    #[serde(rename = "autoGradeEnabled")]
+    pub auto_grade_enabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdminGrantAttemptsRequest {
+    #[serde(rename = "extraAttempts")]
+    pub extra_attempts: i32,
 }
 
 #[derive(Debug, Serialize)]
@@ -890,12 +984,5 @@ pub struct AdminJupyterHubAccessResponse {
     #[serde(rename = "jupyterhubUrl")]
     pub jupyterhub_url: String,
     pub token: String,
-    pub message: String,
-}
-
-// Response for syncing notebook to nbgrader
-#[derive(Debug, Serialize)]
-pub struct AdminSyncNotebookResponse {
-    pub success: bool,
     pub message: String,
 }

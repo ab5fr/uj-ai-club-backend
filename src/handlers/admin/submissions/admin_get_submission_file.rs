@@ -46,8 +46,8 @@ pub async fn admin_get_submission_file(
         AppError::BadRequest("Student does not have a JupyterHub username yet".to_string())
     })?;
 
-    let grading_service_url =
-        std::env::var("GRADING_SERVICE_URL").unwrap_or_else(|_| "http://uj-ai-club-grading:9100".to_string());
+    let grading_service_url = crate::grading::grading_service_url();
+    let client = crate::grading::grading_client()?;
 
     let download = query.download.unwrap_or(false);
     let endpoint = format!(
@@ -58,8 +58,7 @@ pub async fn admin_get_submission_file(
         if download { 1 } else { 0 }
     );
 
-    let response = reqwest::Client::new()
-        .get(&endpoint)
+    let response = crate::grading::apply_grading_auth(client.get(&endpoint))?
         .send()
         .await
         .map_err(|e| AppError::InternalError(e.into()))?;

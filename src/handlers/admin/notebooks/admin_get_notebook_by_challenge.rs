@@ -34,6 +34,7 @@ pub async fn admin_get_notebook_by_challenge(
         memory_limit: notebook.memory_limit,
         time_limit_minutes: notebook.time_limit_minutes,
         network_disabled: notebook.network_disabled,
+        auto_grade_enabled: notebook.auto_grade_enabled,
         created_at: notebook.created_at,
         updated_at: notebook.updated_at,
     };

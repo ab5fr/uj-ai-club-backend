@@ -138,7 +138,7 @@ docker build -f ./jupyterhub/Dockerfile.grading -t ujaiclub/grading-service:late
    - "Autograded tests" for test cells (hidden from students)
    - "Read-only" for problem descriptions
 3. Upload via admin panel with:
-   - Assignment name (unique identifier)
+   - Notebook file (assignment name is taken from the filename stem)
    - Max points
    - Resource limits
 4. nbgrader will automatically grade submissions

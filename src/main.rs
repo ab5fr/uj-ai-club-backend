@@ -20,12 +20,17 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("SERVER_ADDRESS").unwrap_or_else(|_| "0.0.0.0:8000".to_string());
 
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(20)
         .connect(&database_url)
         .await?;
 
     sqlx::migrate!().run(&pool).await?;
     tracing::info!("Database migrations applied");
+
+    let worker_pool = pool.clone();
+    tokio::spawn(async move {
+        uj_ai_club_backend::session_expiry::run_session_expiry_worker(worker_pool).await;
+    });
 
     let app = create_app(pool);
 

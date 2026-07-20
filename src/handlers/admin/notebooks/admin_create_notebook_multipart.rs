@@ -12,12 +12,12 @@ pub async fn admin_create_notebook_multipart(
     use tokio::io::AsyncWriteExt;
 
     let mut challenge_id: Option<i32> = None;
-    let mut assignment_name: Option<String> = None;
     let mut max_points: i32 = 100;
     let mut cpu_limit: f64 = 0.5;
     let mut memory_limit: String = "512M".to_string();
     let mut time_limit_minutes: i32 = 60;
     let mut network_disabled: bool = true;
+    let mut auto_grade_enabled: bool = false;
     let mut notebook_filename: Option<String> = None;
     let mut notebook_data: Option<Vec<u8>> = None;
 
@@ -37,14 +37,6 @@ pub async fn admin_create_notebook_multipart(
                 challenge_id = Some(
                     text.parse()
                         .map_err(|_| AppError::BadRequest("Invalid challengeId".to_string()))?,
-                );
-            }
-            "assignmentName" => {
-                assignment_name = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| AppError::InternalError(e.into()))?,
                 );
             }
             "maxPoints" => {
@@ -81,6 +73,13 @@ pub async fn admin_create_notebook_multipart(
                     .map_err(|e| AppError::InternalError(e.into()))?;
                 network_disabled = text == "true" || text == "1";
             }
+            "autoGradeEnabled" => {
+                let text = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::InternalError(e.into()))?;
+                auto_grade_enabled = text == "true" || text == "1";
+            }
             "notebook" => {
                 if let Some(file_name) = field.file_name().map(|s| s.to_string()) {
                     notebook_filename = Some(file_name);
@@ -99,12 +98,18 @@ pub async fn admin_create_notebook_multipart(
 
     let challenge_id =
         challenge_id.ok_or_else(|| AppError::BadRequest("Missing challengeId".to_string()))?;
-    let assignment_name = assignment_name
-        .ok_or_else(|| AppError::BadRequest("Missing assignmentName".to_string()))?;
     let notebook_filename = notebook_filename
         .ok_or_else(|| AppError::BadRequest("Missing notebook file".to_string()))?;
     let notebook_data =
         notebook_data.ok_or_else(|| AppError::BadRequest("Missing notebook file".to_string()))?;
+
+    crate::handlers::admin::upload::validate_notebook_upload(
+        &notebook_filename,
+        &notebook_data,
+    )?;
+
+    let assignment_name =
+        crate::handlers::admin::upload::assignment_name_from_filename(&notebook_filename)?;
 
     // Verify challenge exists
     let _challenge: Challenge = sqlx::query_as("SELECT * FROM challenges WHERE id = $1")
@@ -134,7 +139,7 @@ pub async fn admin_create_notebook_multipart(
 
     if existing_assignment.is_some() {
         return Err(AppError::BadRequest(
-            "This assignment name is already in use. Please choose a unique assignment name."
+            "A notebook with this filename is already in use. Please rename the file and try again."
                 .to_string(),
         ));
     }
@@ -161,8 +166,8 @@ pub async fn admin_create_notebook_multipart(
     let notebook_result = sqlx::query_as(
         r#"
         INSERT INTO challenge_notebooks 
-        (challenge_id, assignment_name, notebook_filename, notebook_path, max_points, cpu_limit, memory_limit, time_limit_minutes, network_disabled)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        (challenge_id, assignment_name, notebook_filename, notebook_path, max_points, cpu_limit, memory_limit, time_limit_minutes, network_disabled, auto_grade_enabled)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
         "#
     )
@@ -175,6 +180,7 @@ pub async fn admin_create_notebook_multipart(
     .bind(&memory_limit)
     .bind(time_limit_minutes)
     .bind(network_disabled)
+    .bind(auto_grade_enabled)
     .fetch_one(&state.pool)
     .await;
 
@@ -183,7 +189,7 @@ pub async fn admin_create_notebook_multipart(
         Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23505") => {
             let message = match db_err.constraint() {
                 Some("challenge_notebooks_assignment_name_key") => {
-                    "This assignment name is already in use. Please choose a unique assignment name."
+                    "A notebook with this filename is already in use. Please rename the file and try again."
                 }
                 Some("unique_challenge_notebook") => {
                     "A notebook already exists for this challenge. Delete it first."
@@ -196,6 +202,18 @@ pub async fn admin_create_notebook_multipart(
         Err(e) => return Err(AppError::DatabaseError(e)),
     };
 
+    let assignment_name = notebook.assignment_name.clone();
+    let notebook_path = notebook.notebook_path.clone();
+    let max_points = notebook.max_points;
+    tokio::spawn(async move {
+        if let Err(e) =
+            crate::grading::sync_notebook_to_nbgrader(&assignment_name, &notebook_path, max_points)
+                .await
+        {
+            tracing::warn!("nbgrader sync after notebook create failed: {e}");
+        }
+    });
+
     let response = AdminChallengeNotebookResponse {
         id: notebook.id,
         challenge_id: notebook.challenge_id,
@@ -207,6 +225,7 @@ pub async fn admin_create_notebook_multipart(
         memory_limit: notebook.memory_limit,
         time_limit_minutes: notebook.time_limit_minutes,
         network_disabled: notebook.network_disabled,
+        auto_grade_enabled: notebook.auto_grade_enabled,
         created_at: notebook.created_at,
         updated_at: notebook.updated_at,
     };
