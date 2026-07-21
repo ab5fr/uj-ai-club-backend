@@ -14,10 +14,12 @@ pub mod submissions;
 use axum::Router;
 use firebase::JwkCache;
 use http::HeaderValue;
+use http::header::X_CONTENT_TYPE_OPTIONS;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -45,16 +47,23 @@ pub fn create_app(pool: sqlx::PgPool) -> Router {
     let cors = build_cors_layer();
 
     routes::api_routes()
-        
         .nest_service("/uploads/avatars", ServeDir::new("uploads/avatars"))
         .nest_service("/uploads/articles", ServeDir::new("uploads/articles"))
+        // Prevent browsers from MIME-sniffing uploaded files (validated by
+        // extension only) into an executable content type such as HTML.
+        .layer(SetResponseHeaderLayer::overriding(
+            X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
         .layer(cors)
         .with_state(app_state)
 }
 
 fn build_cors_layer() -> CorsLayer {
-    let allowed = std::env::var("CORS_ALLOWED_ORIGINS")
-        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+    const DEFAULT_ORIGIN: &str = "http://localhost:3000";
+
+    let allowed =
+        std::env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| DEFAULT_ORIGIN.to_string());
 
     let origins: Vec<HeaderValue> = allowed
         .split(',')
@@ -63,12 +72,17 @@ fn build_cors_layer() -> CorsLayer {
         .filter_map(|origin| HeaderValue::from_str(origin).ok())
         .collect();
 
-    if origins.is_empty() {
-        return CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any);
-    }
+    // Never fall back to allowing any origin: an empty/invalid configuration
+    // should degrade to the safe default rather than reflecting every origin.
+    let origins = if origins.is_empty() {
+        tracing::warn!(
+            "CORS_ALLOWED_ORIGINS did not yield any valid origins; \
+             falling back to {DEFAULT_ORIGIN} instead of allowing all origins"
+        );
+        vec![HeaderValue::from_static(DEFAULT_ORIGIN)]
+    } else {
+        origins
+    };
 
     CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
