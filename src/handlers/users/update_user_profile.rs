@@ -12,7 +12,7 @@ pub async fn update_user_profile(
     State(state): State<AppState>,
     Json(req): Json<UpdateProfileRequest>,
 ) -> Result<Json<UpdateProfileResponse>, AppError> {
-    // Get current user data
+    
     let current_user: User = sqlx::query_as("SELECT * FROM users WHERE id = $1")
         .bind(auth.user_id)
         .fetch_optional(&state.pool)

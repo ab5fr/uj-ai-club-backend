@@ -12,7 +12,7 @@ async fn main() -> anyhow::Result<()> {
         let pg_user = std::env::var("POSTGRES_USER").unwrap_or_else(|_| "uj_ai_club".to_string());
         let pg_pass = std::env::var("POSTGRES_PASSWORD").unwrap();
         let pg_db = std::env::var("POSTGRES_DB").unwrap_or_else(|_| "uj_ai_club".to_string());
-        let pg_host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "postgres".to_string());
+        let pg_host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "database".to_string());
 
         format!("postgres://{pg_user}:{pg_pass}@{pg_host}:5432/{pg_db}")
     });
@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
 
     let addr: SocketAddr = server_addr.parse()?;
 
-    tracing::info!("Starting server on {}", addr); // test push
+    tracing::info!("Starting server on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

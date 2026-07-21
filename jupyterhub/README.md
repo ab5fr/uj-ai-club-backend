@@ -45,8 +45,9 @@ This directory contains the configuration for JupyterHub with nbgrader integrati
 - Includes nbgrader for assignment submission
 - Pre-configured with security restrictions
 
-### 4. Grading Service (`grading_service.py`, `Dockerfile.grading`)
+### 4. Grading Service (`../grading/`)
 
+- Lives in the sibling [`grading/`](../grading/) directory
 - Watches for student submissions in the nbgrader exchange
 - Runs nbgrader autograde on submissions
 - Reports grades back to main application via webhook
@@ -123,12 +124,14 @@ GRADING_WEBHOOK_URL=https://api.uj-aiclub.com/webhooks/nbgrader/grade
 # Build JupyterHub image
 docker build -t ujaiclub/jupyterhub:latest ./jupyterhub
 
-# Build student notebook image
+# Build student notebook image (also published as ghcr.io/ab5fr/uj-ai-club-backend-student-notebook)
 docker build -t ujaiclub/student-notebook:latest ./jupyterhub/student-notebook
 
 # Build grading service image
-docker build -f ./jupyterhub/Dockerfile.grading -t ujaiclub/grading-service:latest ./jupyterhub
+docker build -t ujaiclub/grading-service:latest ./grading
 ```
+
+Optional: point the Hub at the GHCR student image with `STUDENT_NOTEBOOK_IMAGE=ghcr.io/ab5fr/uj-ai-club-backend-student-notebook:latest`.
 
 ## Creating nbgrader Assignments
 

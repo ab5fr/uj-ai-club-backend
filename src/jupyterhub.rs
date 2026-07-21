@@ -3,15 +3,14 @@ use serde::Deserialize;
 
 use crate::error::AppError;
 
-/// Public/browser URL for login redirects (host-mapped port).
+
 pub fn jupyterhub_public_url() -> String {
     std::env::var("JUPYTERHUB_URL").unwrap_or_else(|_| "http://localhost:8888".to_string())
 }
 
-/// Internal Hub API base URL (Docker service name). Used for server stop/logout.
+
 pub fn jupyterhub_internal_api_url() -> String {
-    std::env::var("JUPYTERHUB_API_URL")
-        .unwrap_or_else(|_| "http://jupyterhub:8000".to_string())
+    std::env::var("JUPYTERHUB_API_URL").unwrap_or_else(|_| "http://jupyterhub:8000".to_string())
 }
 
 #[deprecated(note = "use jupyterhub_public_url for browser URLs")]
@@ -20,9 +19,8 @@ pub fn jupyterhub_api_url() -> String {
 }
 
 pub fn jupyterhub_api_token() -> Result<String, AppError> {
-    std::env::var("JUPYTERHUB_API_TOKEN").map_err(|_| {
-        AppError::InternalError(anyhow::anyhow!("JUPYTERHUB_API_TOKEN must be set"))
-    })
+    std::env::var("JUPYTERHUB_API_TOKEN")
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("JUPYTERHUB_API_TOKEN must be set")))
 }
 
 pub fn student_jupyterhub_username(user_id: uuid::Uuid) -> String {
@@ -76,7 +74,7 @@ pub async fn user_server_running(username: &str) -> Result<bool, AppError> {
     Ok(running)
 }
 
-/// Stop a user's running JupyterHub server so they can no longer edit after submit.
+
 pub async fn stop_user_server(username: &str) -> Result<(), AppError> {
     let token = jupyterhub_api_token()?;
     let base = jupyterhub_internal_api_url();
@@ -89,9 +87,11 @@ pub async fn stop_user_server(username: &str) -> Result<(), AppError> {
         .header("Authorization", &auth)
         .send()
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!(
-            "JupyterHub server stop request failed for {username} at {server_url}: {e}"
-        )))?;
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!(
+                "JupyterHub server stop request failed for {username} at {server_url}: {e}"
+            ))
+        })?;
 
     let server_status = server_resp.status();
     if server_status.is_success() || server_status.as_u16() == 404 {
@@ -104,7 +104,7 @@ pub async fn stop_user_server(username: &str) -> Result<(), AppError> {
         "JupyterHub API stop failed for {username}: {server_status} {body}; falling back to Docker stop"
     );
 
-    // Reliable fallback: stop the student container via the grading service (Docker socket).
+    
     stop_user_container_via_grading(username).await
 }
 

@@ -1,0 +1,12 @@
+target/
+.git/
+.github/
+.env
+.env.*
+!.env.example
+*.md
+docker-compose*.yml
+.gitignore
+uploads/
+jupyterhub/
+grading/

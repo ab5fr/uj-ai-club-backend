@@ -13,7 +13,7 @@ struct ExpiredSessionRow {
     auto_grade_enabled: bool,
 }
 
-/// Background worker that auto-submits attempts whose time limit has expired.
+
 pub async fn run_session_expiry_worker(pool: sqlx::PgPool) {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

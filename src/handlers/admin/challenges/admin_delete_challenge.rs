@@ -15,7 +15,7 @@ pub async fn admin_delete_challenge(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<AdminSuccessResponse>, AppError> {
-    // Before deleting the challenge, clean up any associated notebook file and nbgrader assignment
+    
     let notebook: Option<ChallengeNotebook> =
         sqlx::query_as("SELECT * FROM challenge_notebooks WHERE challenge_id = $1")
             .bind(id)
@@ -23,10 +23,10 @@ pub async fn admin_delete_challenge(
             .await?;
 
     if let Some(nb) = &notebook {
-        // Delete the notebook file from disk
+        
         let _ = tokio::fs::remove_file(&nb.notebook_path).await;
 
-        // Clean up the nbgrader assignment in the grading service (best-effort)
+        
         let assignment_name = nb.assignment_name.clone();
         tokio::spawn(async move {
             if let Err(e) = crate::grading::cleanup_nbgrader_assignment(&assignment_name).await {
@@ -35,7 +35,7 @@ pub async fn admin_delete_challenge(
         });
     }
 
-    // Remove this challenge's credited points from users before cascade-delete.
+    
     #[derive(sqlx::FromRow)]
     struct CreditedRow {
         user_id: uuid::Uuid,
@@ -61,7 +61,7 @@ pub async fn admin_delete_challenge(
             .await?;
     }
 
-    // Delete the challenge row (cascade deletes challenge_notebooks and challenge_submissions)
+    
     let result = sqlx::query("DELETE FROM challenges WHERE id = $1")
         .bind(id)
         .execute(&state.pool)

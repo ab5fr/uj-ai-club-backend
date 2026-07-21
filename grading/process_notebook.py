@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""CLI wrapper for setting up nbgrader assignments from source notebooks."""
 
 import re
 import shutil
@@ -7,7 +6,6 @@ import sys
 from pathlib import Path
 
 from notebook_processor import process_notebook_file
-
 
 def setup_nbgrader_assignment(source_notebook, assignment_name, course_dir="/srv/nbgrader/course"):
     source_dir = Path(course_dir) / "source" / assignment_name
@@ -27,7 +25,6 @@ def setup_nbgrader_assignment(source_notebook, assignment_name, course_dir="/srv
     process_notebook_file(str(source_dest), str(release_dest))
 
     return str(release_dest)
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:

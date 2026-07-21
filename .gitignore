@@ -7,15 +7,8 @@
 # Docker
 docker-compose.override.yml
 
-# SSL certificates and Certbot
-certbot/
-*.pem
-*.crt
-*.key
-
 # Logs
 *.log
-nginx/logs/
 
 # OS files
 .DS_Store

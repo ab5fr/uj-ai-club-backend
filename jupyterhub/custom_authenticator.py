@@ -1,8 +1,3 @@
-"""
-Custom JupyterHub Authenticator for UJ AI Club
-Authenticates users via JWT tokens from the main application
-"""
-
 import json
 import jwt
 import os
@@ -11,7 +6,6 @@ import urllib.request
 
 from jupyterhub.auth import Authenticator
 from traitlets import Bool, Unicode
-
 
 def _validate_token_with_backend(token: str) -> dict | None:
     backend_url = os.environ.get("BACKEND_URL", "http://backend:8000").rstrip("/")
@@ -35,9 +29,7 @@ def _validate_token_with_backend(token: str) -> dict | None:
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError):
         return None
 
-
 class JWTAuthenticator(Authenticator):
-    """Validates JWT tokens issued by the UJ AI Club API."""
 
     jwt_secret = Unicode(
         config=True,
@@ -116,12 +108,9 @@ class JWTAuthenticator(Authenticator):
         if auth_state:
             spawner.environment["AICLUB_USER_ID"] = auth_state.get("user_id", "")
 
-
 from jupyterhub.handlers import BaseHandler
 
-
 class TokenLoginHandler(BaseHandler):
-    """Handler for token-based login."""
 
     async def get(self):
         token = self.get_argument("token", None)

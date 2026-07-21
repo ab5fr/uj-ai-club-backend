@@ -35,16 +35,16 @@ pub async fn upload_user_avatar(
 
             crate::handlers::admin::upload::validate_image_upload(&file_name, &data)?;
 
-            // Create uploads directory if it doesn't exist
+            
             tokio::fs::create_dir_all("uploads/avatars")
                 .await
                 .map_err(|e| AppError::InternalError(e.into()))?;
 
-            // Generate unique filename
+            
             let unique_filename = format!("{}_{}", Uuid::new_v4(), file_name);
             let file_path = format!("uploads/avatars/{unique_filename}");
 
-            // Save file
+            
             let mut file = tokio::fs::File::create(&file_path)
                 .await
                 .map_err(|e| AppError::InternalError(e.into()))?;
@@ -53,10 +53,10 @@ pub async fn upload_user_avatar(
                 .await
                 .map_err(|e| AppError::InternalError(e.into()))?;
 
-            // Generate URL (you may want to customize this based on your domain)
+            
             let image_url = format!("/uploads/avatars/{unique_filename}");
 
-            // Update user's image in database
+            
             sqlx::query("UPDATE users SET image = $1 WHERE id = $2")
                 .bind(&image_url)
                 .bind(auth.user_id)

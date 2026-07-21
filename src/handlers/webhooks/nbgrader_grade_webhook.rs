@@ -7,7 +7,7 @@ use crate::{
     submissions::{apply_grade, ApplyGradeParams},
 };
 
-/// Webhook endpoint for nbgrader to report grades
+
 pub async fn nbgrader_grade_webhook(
     State(state): State<AppState>,
     Json(payload): Json<NbgraderWebhookPayload>,
@@ -64,7 +64,7 @@ pub async fn nbgrader_grade_webhook(
         return Err(AppError::NotFound);
     };
 
-    // Never overwrite a manual grade with a late/async nbgrader callback.
+    
     if existing.manual_graded_at.is_some() {
         return Ok(Json(NbgraderWebhookResponse {
             success: true,
@@ -113,7 +113,7 @@ pub async fn nbgrader_grade_webhook(
         }));
     }
 
-    // Manual grading path: store raw nbgrader score for admin review.
+    
     let percentage = if payload.max_score > 0.0 {
         (payload.score / payload.max_score) * 100.0
     } else {

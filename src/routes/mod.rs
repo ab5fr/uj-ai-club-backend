@@ -42,10 +42,6 @@ fn auth_routes() -> Router<AppState> {
 fn public_routes() -> Router<AppState> {
     Router::new()
         .route("/leaderboards", get(handlers::get_leaderboards))
-        .route("/resources", get(handlers::get_resources))
-        .route("/resources/{id}", get(handlers::get_resource_by_id))
-        .route("/certificates", get(handlers::get_certificates))
-        .route("/certificates/{id}", get(handlers::get_certificate_by_id))
         .route("/articles", get(handlers::get_articles))
         .route("/articles/{slug}", get(handlers::get_article_by_slug))
         .route("/contact", post(handlers::create_contact))
@@ -93,48 +89,6 @@ fn webhook_routes() -> Router<AppState> {
 
 fn admin_routes() -> Router<AppState> {
     Router::new()
-        .route("/admin/resources", get(handlers::admin_get_resources))
-        .route(
-            "/admin/resources",
-            post(handlers::admin_create_resource_multipart),
-        )
-        .route(
-            "/admin/resources/{id}",
-            get(handlers::admin_get_resource_by_id),
-        )
-        .route(
-            "/admin/resources/{id}",
-            put(handlers::admin_update_resource_multipart),
-        )
-        .route(
-            "/admin/resources/{id}",
-            delete(handlers::admin_delete_resource),
-        )
-        .route(
-            "/admin/resources/{id}/visibility",
-            patch(handlers::admin_patch_resource_visibility),
-        )
-        .route("/admin/certificates", get(handlers::admin_get_certificates))
-        .route(
-            "/admin/certificates",
-            post(handlers::admin_create_certificate_multipart),
-        )
-        .route(
-            "/admin/certificates/{id}",
-            get(handlers::admin_get_certificate_by_id),
-        )
-        .route(
-            "/admin/certificates/{id}",
-            put(handlers::admin_update_certificate_multipart),
-        )
-        .route(
-            "/admin/certificates/{id}",
-            delete(handlers::admin_delete_certificate),
-        )
-        .route(
-            "/admin/certificates/{id}/visibility",
-            patch(handlers::admin_patch_certificate_visibility),
-        )
         .route("/admin/articles", get(handlers::admin_get_articles))
         .route(
             "/admin/articles",
@@ -183,7 +137,10 @@ fn admin_routes() -> Router<AppState> {
             "/admin/notebooks",
             post(handlers::admin_create_notebook_multipart),
         )
-        .route("/admin/notebooks/{id}", put(handlers::admin_update_notebook))
+        .route(
+            "/admin/notebooks/{id}",
+            put(handlers::admin_update_notebook),
+        )
         .route(
             "/admin/notebooks/{id}",
             delete(handlers::admin_delete_notebook),

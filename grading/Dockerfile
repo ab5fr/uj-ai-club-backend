@@ -1,16 +1,12 @@
-# Grading Service Docker Image
-# HTTP API + watches for submissions and runs nbgrader autograder
 
 FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
 RUN pip install --no-cache-dir \
     nbgrader==0.9.* \
     watchdog \
@@ -18,15 +14,12 @@ RUN pip install --no-cache-dir \
     flask \
     docker
 
-# Copy grading service
 COPY grading_service.py /app/grading_service.py
 COPY notebook_processor.py /app/notebook_processor.py
-COPY nbgrader_config_hub.py /etc/jupyter/nbgrader_config.py
+COPY nbgrader_config.py /etc/jupyter/nbgrader_config.py
 
-# Create directories
 RUN mkdir -p /srv/nbgrader/exchange /srv/nbgrader/course /data
 
-# Expose the API port
 EXPOSE 9100
 
 CMD ["python", "/app/grading_service.py"]

@@ -10,13 +10,13 @@ use crate::{
     models::*,
 };
 
-/// Delete a notebook (admin)
+
 pub async fn admin_delete_notebook(
     _auth: AdminUser,
     State(state): State<AppState>,
     Path(notebook_id): Path<i32>,
 ) -> Result<Json<AdminSuccessResponse>, AppError> {
-    // Get notebook to delete the file
+    
     let notebook: Option<ChallengeNotebook> =
         sqlx::query_as("SELECT * FROM challenge_notebooks WHERE id = $1")
             .bind(notebook_id)
@@ -24,7 +24,7 @@ pub async fn admin_delete_notebook(
             .await?;
 
     if let Some(nb) = notebook {
-        // Delete the file
+        
         let _ = tokio::fs::remove_file(&nb.notebook_path).await;
     }
 

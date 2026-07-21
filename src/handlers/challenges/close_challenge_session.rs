@@ -13,8 +13,7 @@ use crate::{
     models::*,
 };
 
-/// Save the student's notebook and stop Jupyter when access should end
-/// (timer expiry, tab close follow-up, etc.). Does not submit for grading.
+
 pub async fn close_challenge_session(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -77,8 +76,8 @@ pub async fn close_challenge_session(
         grading::close_jupyter_session(&jupyterhub_username, &notebook.notebook_filename).await?;
     }
 
-    // Invalidate SSO token so Hub cannot re-login; spawn is also blocked once
-    // session_expires_at has passed. Keep session_revoked_at NULL so submit still works.
+    
+    
     sqlx::query(
         r#"
         UPDATE challenge_submissions

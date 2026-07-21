@@ -1,8 +1,3 @@
-"""
-Shared notebook processing utilities for nbgrader.
-Strips solution code and hidden tests from source notebooks.
-"""
-
 from __future__ import annotations
 
 import json
@@ -16,13 +11,10 @@ SOLUTION_END_MARKERS = ("### END SOLUTION", "# END SOLUTION")
 HIDDEN_BEGIN_MARKERS = ("### BEGIN HIDDEN TESTS", "# BEGIN HIDDEN TESTS")
 HIDDEN_END_MARKERS = ("### END HIDDEN TESTS", "# END HIDDEN TESTS")
 
-
 def _contains_marker(source: str, markers: tuple[str, ...]) -> bool:
     return any(marker in source for marker in markers)
 
-
 def remove_solution_code(source: str) -> str:
-    """Remove code between solution markers and insert a student placeholder."""
     lines = source.split("\n")
     result: list[str] = []
     in_solution = False
@@ -43,9 +35,7 @@ def remove_solution_code(source: str) -> str:
 
     return "\n".join(result)
 
-
 def remove_hidden_tests(source: str) -> str:
-    """Remove code between hidden-test markers."""
     lines = source.split("\n")
     result: list[str] = []
     in_hidden = False
@@ -62,19 +52,15 @@ def remove_hidden_tests(source: str) -> str:
 
     return "\n".join(result)
 
-
 def _cell_source_to_str(source) -> str:
     if isinstance(source, list):
         return "".join(source)
     return source or ""
 
-
 def _set_cell_source(cell: dict, source: str) -> None:
     cell["source"] = source
 
-
 def process_notebook_cells(notebook: dict) -> dict:
-    """Return a student copy of a notebook with solutions and hidden tests removed."""
     for cell in notebook.get("cells", []):
         if cell.get("cell_type") != "code":
             if "outputs" in cell:
@@ -101,9 +87,7 @@ def process_notebook_cells(notebook: dict) -> dict:
 
     return notebook
 
-
 def process_notebook_file(source_path: str | Path, output_path: str | Path) -> None:
-    """Read a notebook, strip solutions/tests, and write the student version."""
     source_path = Path(source_path)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -10,7 +10,7 @@ use crate::{
     models::*,
 };
 
-/// Update notebook settings (admin)
+
 pub async fn admin_update_notebook(
     _auth: AdminUser,
     State(state): State<AppState>,

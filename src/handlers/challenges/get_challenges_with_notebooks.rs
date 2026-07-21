@@ -12,7 +12,7 @@ use crate::{
     submissions::effective_allowed_submissions,
 };
 
-/// Get all challenges with notebook information for the user
+
 pub async fn get_challenges_with_notebooks(
     auth: AuthUser,
     State(state): State<AppState>,

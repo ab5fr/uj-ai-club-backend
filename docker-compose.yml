@@ -1,18 +1,25 @@
 services:
-  api:
-    build:
-      context: .
-    env_file: .env
+  database:
+    image: postgres:16-alpine
     environment:
-      GRADING_SERVICE_URL: http://grading:9100
-      GRADING_SERVICE_SECRET: ${GRADING_SERVICE_SECRET}
-      JUPYTERHUB_API_URL: http://jupyterhub:8000
+      POSTGRES_USER: ${POSTGRES_USER:-uj_ai_club}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-uj_ai_club_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-uj_ai_club}
     volumes:
-      - uploads_data:/app/uploads
+      - postgres_data:/var/lib/postgresql/data
     ports:
-      - "8000:8000"
+      - "5432:5432"
     networks:
       - internal
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-uj_ai_club} -d ${POSTGRES_DB:-uj_ai_club}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   jupyterhub:
@@ -21,25 +28,29 @@ services:
     env_file: .env
     environment:
       DOCKER_NETWORK_NAME: internal
-      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:8000}
+      STUDENT_ISOLATED_NETWORK_NAME: students
+      BACKEND_URL: ${BACKEND_URL:-http://backend:8000}
+      MAIN_APP_URL: ${MAIN_APP_URL:-http://localhost:3000}
+      NOTEBOOKS_VOLUME_NAME: uj-ai-club-backend_uploads_data
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - nbgrader_exchange:/srv/nbgrader/exchange
       - jupyterhub_data:/data
+      - uploads_data:/srv/notebooks
     ports:
       - "8888:8000"
     networks:
       - internal
+      - students
     restart: unless-stopped
 
   grading:
     build:
-      context: ./jupyterhub
-      dockerfile: Dockerfile.grading
+      context: ./grading
     env_file: .env
     environment:
       GRADING_SERVICE_SECRET: ${GRADING_SERVICE_SECRET}
-      GRADING_WEBHOOK_URL: http://host.docker.internal:8000/webhooks/nbgrader/grade
+      GRADING_WEBHOOK_URL: ${GRADING_WEBHOOK_URL:-http://backend:8000/webhooks/nbgrader/grade}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - uploads_data:/srv/notebooks
@@ -53,6 +64,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
   uploads_data:
   nbgrader_exchange:
   nbgrader_course:
@@ -62,3 +74,6 @@ volumes:
 networks:
   internal:
     name: internal
+  students:
+    name: students
+    internal: true

@@ -10,7 +10,7 @@ use crate::{
     models::*,
 };
 
-/// Get notebook for a specific challenge (admin)
+
 pub async fn admin_get_notebook_by_challenge(
     _auth: AdminUser,
     State(state): State<AppState>,

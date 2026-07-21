@@ -1,7 +1,13 @@
+name: uj-ai-club-prod
+
 services:
-  api-1:
-    image: ${API_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-api:latest}
-    env_file: .env
+  backend-1: &backend
+    image: ${BACKEND_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-server:latest}
+    env_file: ./uj-ai-club-backend/.env
+    environment:
+      SERVER_ADDRESS: 0.0.0.0:8000
+      GRADING_SERVICE_URL: http://grading:9100
+      JUPYTERHUB_API_URL: http://jupyterhub:8000
     volumes:
       - uploads_data:/app/uploads
     networks:
@@ -13,54 +19,40 @@ services:
       - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
-  api-2:
-    image: ${API_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-api:latest}
-    env_file: .env
-    volumes:
-      - uploads_data:/app/uploads
-    networks:
-      proxy: {}
-      internal:
-        aliases:
-          - backend
-    labels:
-      - com.centurylinklabs.watchtower.enable=true
-    restart: unless-stopped
+  backend-2:
+    <<: *backend
 
-  api-3:
-    image: ${API_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-api:latest}
-    env_file: .env
-    volumes:
-      - uploads_data:/app/uploads
-    networks:
-      proxy: {}
-      internal:
-        aliases:
-          - backend
-    labels:
-      - com.centurylinklabs.watchtower.enable=true
-    restart: unless-stopped
+  backend-3:
+    <<: *backend
 
   jupyterhub:
     image: ${JUPYTERHUB_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-jupyterhub:latest}
-    env_file: .env
+    env_file: ./uj-ai-club-backend/.env
     environment:
-      - DOCKER_NETWORK_NAME=internal
-      - JUPYTERHUB_HUB_CONNECT_IP=jupyterhub
+      DOCKER_NETWORK_NAME: uj-ai-club-prod_internal
+      STUDENT_ISOLATED_NETWORK_NAME: uj-ai-club-prod_students
+      BACKEND_URL: http://backend:8000
+      JUPYTERHUB_HUB_CONNECT_IP: jupyterhub
+      NOTEBOOKS_VOLUME_NAME: uj-ai-club-prod_uploads_data
+      STUDENT_NOTEBOOK_IMAGE: ${STUDENT_NOTEBOOK_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-student-notebook:latest}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - nbgrader_exchange:/srv/nbgrader/exchange
       - jupyterhub_data:/data
+      - uploads_data:/srv/notebooks
     networks:
       - proxy
       - internal
+      - students
     labels:
       - com.centurylinklabs.watchtower.enable=true
     restart: unless-stopped
 
   grading:
     image: ${GRADING_IMAGE:-ghcr.io/ab5fr/uj-ai-club-backend-grading:latest}
-    env_file: .env
+    env_file: ./uj-ai-club-backend/.env
+    environment:
+      GRADING_WEBHOOK_URL: ${GRADING_WEBHOOK_URL:-http://backend:8000/webhooks/nbgrader/grade}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - uploads_data:/srv/notebooks
@@ -74,7 +66,7 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: nginx:latest
+    image: nginx:1.27-alpine
     volumes:
       - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
       - ./infra/certbot/www:/var/www/certbot
@@ -83,9 +75,9 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - api-1
-      - api-2
-      - api-3
+      - backend-1
+      - backend-2
+      - backend-3
       - jupyterhub
     networks:
       - proxy
@@ -94,7 +86,7 @@ services:
     restart: unless-stopped
 
   certbot:
-    image: certbot/certbot:latest
+    image: certbot/certbot:v2.11.0
     volumes:
       - ./infra/certbot/www:/var/www/certbot
       - ./infra/certbot/conf:/etc/letsencrypt
@@ -102,7 +94,7 @@ services:
     restart: unless-stopped
 
   watchtower:
-    image: containrrr/watchtower:latest
+    image: containrrr/watchtower:1.7.1
     command: --label-enable --cleanup --rolling-restart --interval 60
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -110,6 +102,7 @@ services:
 
 volumes:
   uploads_data:
+    name: uj-ai-club-prod_uploads_data
   nbgrader_exchange:
   nbgrader_course:
   nbgrader_data:
@@ -117,6 +110,10 @@ volumes:
 
 networks:
   proxy:
+    name: uj-ai-club-prod_proxy
   internal:
-    name: internal
+    name: uj-ai-club-prod_internal
+    internal: true
+  students:
+    name: uj-ai-club-prod_students
     internal: true

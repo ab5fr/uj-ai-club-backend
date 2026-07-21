@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-// Custom deserializer for date strings to OffsetDateTime
 mod date_format {
     use serde::{self, Deserialize, Deserializer};
     use time::{Date, OffsetDateTime, Time, UtcOffset};
@@ -14,14 +13,14 @@ mod date_format {
         let s: Option<String> = Option::deserialize(deserializer)?;
         match s {
             Some(s) => {
-                // Try to parse as date-only string (YYYY-MM-DD)
+                
                 if let Ok(date) =
                     Date::parse(&s, &time::format_description::well_known::Iso8601::DEFAULT)
                 {
                     let datetime = date.with_time(Time::MIDNIGHT).assume_offset(UtcOffset::UTC);
                     Ok(Some(datetime))
                 } else {
-                    // Try to parse as full datetime
+                    
                     OffsetDateTime::parse(
                         &s,
                         &time::format_description::well_known::Iso8601::DEFAULT,
@@ -35,7 +34,6 @@ mod date_format {
     }
 }
 
-// Custom serializer for OffsetDateTime to ISO 8601 string
 mod iso8601_option {
     use serde::{self, Serializer};
     use time::OffsetDateTime;
@@ -122,46 +120,6 @@ pub struct LeaderboardResponse {
 }
 
 #[derive(Debug, Serialize, FromRow)]
-pub struct Resource {
-    pub id: i32,
-    pub title: String,
-    pub provider: String,
-    pub cover_image: Option<String>,
-    pub instructor_name: String,
-    pub instructor_image: Option<String>,
-    pub notion_url: Option<String>,
-    pub visible: bool,
-    pub created_at: time::OffsetDateTime,
-    pub updated_at: time::OffsetDateTime,
-}
-
-#[derive(Debug, Serialize, FromRow)]
-pub struct Quote {
-    pub id: i32,
-    pub text: String,
-    pub author: String,
-    pub visible: bool,
-    pub created_at: time::OffsetDateTime,
-    pub updated_at: time::OffsetDateTime,
-}
-
-#[derive(Debug, Serialize, FromRow)]
-pub struct Certificate {
-    pub id: i32,
-    pub level: String,
-    pub title: String,
-    pub course_title: String,
-    pub cover_image: Option<String>,
-    pub first_name: String,
-    pub second_name: String,
-    pub coursera_url: Option<String>,
-    pub youtube_url: Option<String>,
-    pub visible: bool,
-    pub created_at: time::OffsetDateTime,
-    pub updated_at: time::OffsetDateTime,
-}
-
-#[derive(Debug, Serialize, FromRow)]
 pub struct Article {
     pub id: i32,
     pub title: String,
@@ -172,60 +130,6 @@ pub struct Article {
     pub visible: bool,
     pub created_at: time::OffsetDateTime,
     pub updated_at: time::OffsetDateTime,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ResourceListResponse {
-    pub id: i32,
-    pub title: String,
-    pub provider: String,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    pub instructor: InstructorResponse,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ResourceDetailResponse {
-    pub id: i32,
-    pub title: String,
-    pub provider: String,
-    #[serde(rename = "notionUrl")]
-    pub notion_url: Option<String>,
-    pub instructor: InstructorResponse,
-    pub quote: Option<QuoteResponse>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CertificateListResponse {
-    pub id: i32,
-    pub level: String,
-    pub title: String,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    #[serde(rename = "firstName")]
-    pub first_name: String,
-    #[serde(rename = "secondName")]
-    pub second_name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CertificateDetailResponse {
-    pub id: i32,
-    pub level: String,
-    pub title: String,
-    #[serde(rename = "courseTitle")]
-    pub course_title: String,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    #[serde(rename = "firstName")]
-    pub first_name: String,
-    #[serde(rename = "secondName")]
-    pub second_name: String,
-    #[serde(rename = "courseraUrl")]
-    pub coursera_url: Option<String>,
-    #[serde(rename = "youtubeUrl")]
-    pub youtube_url: Option<String>,
-    pub quote: Option<QuoteResponse>,
 }
 
 #[derive(Debug, Serialize)]
@@ -269,18 +173,6 @@ pub struct AdminArticleResponse {
     pub created_at: time::OffsetDateTime,
     #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
     pub updated_at: time::OffsetDateTime,
-}
-
-#[derive(Debug, Serialize)]
-pub struct InstructorResponse {
-    pub name: String,
-    pub image: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct QuoteResponse {
-    pub text: String,
-    pub author: String,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -377,136 +269,6 @@ pub struct AdminContactMessageResponse {
     pub message: String,
     #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
     pub created_at: time::OffsetDateTime,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AdminResourceResponse {
-    pub id: i32,
-    pub title: String,
-    pub provider: String,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    #[serde(rename = "notionUrl")]
-    pub notion_url: Option<String>,
-    pub instructor: Option<AdminInstructorResponse>,
-    pub quote: Option<AdminQuoteResponse>,
-    pub visible: bool,
-    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
-    pub created_at: time::OffsetDateTime,
-    #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
-    pub updated_at: time::OffsetDateTime,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AdminCertificateResponse {
-    pub id: i32,
-    pub level: String,
-    pub title: String,
-    #[serde(rename = "courseTitle")]
-    pub course_title: String,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    #[serde(rename = "firstName")]
-    pub first_name: String,
-    #[serde(rename = "secondName")]
-    pub second_name: String,
-    #[serde(rename = "courseraUrl")]
-    pub coursera_url: Option<String>,
-    #[serde(rename = "youtubeUrl")]
-    pub youtube_url: Option<String>,
-    pub visible: bool,
-    #[serde(rename = "createdAt", serialize_with = "iso8601::serialize")]
-    pub created_at: time::OffsetDateTime,
-    #[serde(rename = "updatedAt", serialize_with = "iso8601::serialize")]
-    pub updated_at: time::OffsetDateTime,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AdminInstructorResponse {
-    pub name: String,
-    pub image: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AdminQuoteResponse {
-    pub text: String,
-    pub author: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AdminCreateResourceRequest {
-    pub title: String,
-    pub provider: String,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    #[serde(rename = "notionUrl")]
-    pub notion_url: Option<String>,
-    pub instructor: Option<AdminInstructorRequest>,
-    pub quote: Option<AdminQuoteRequest>,
-    pub visible: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AdminCreateCertificateRequest {
-    pub level: String,
-    pub title: String,
-    #[serde(rename = "courseTitle")]
-    pub course_title: String,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    #[serde(rename = "firstName")]
-    pub first_name: String,
-    #[serde(rename = "secondName")]
-    pub second_name: String,
-    #[serde(rename = "courseraUrl")]
-    pub coursera_url: Option<String>,
-    #[serde(rename = "youtubeUrl")]
-    pub youtube_url: Option<String>,
-    pub visible: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AdminUpdateResourceRequest {
-    pub title: Option<String>,
-    pub provider: Option<String>,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    #[serde(rename = "notionUrl")]
-    pub notion_url: Option<String>,
-    pub instructor: Option<AdminInstructorRequest>,
-    pub quote: Option<AdminQuoteRequest>,
-    pub visible: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AdminUpdateCertificateRequest {
-    pub level: Option<String>,
-    pub title: Option<String>,
-    #[serde(rename = "courseTitle")]
-    pub course_title: Option<String>,
-    #[serde(rename = "coverImage")]
-    pub cover_image: Option<String>,
-    #[serde(rename = "firstName")]
-    pub first_name: Option<String>,
-    #[serde(rename = "secondName")]
-    pub second_name: Option<String>,
-    #[serde(rename = "courseraUrl")]
-    pub coursera_url: Option<String>,
-    #[serde(rename = "youtubeUrl")]
-    pub youtube_url: Option<String>,
-    pub visible: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AdminInstructorRequest {
-    pub name: String,
-    pub image: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AdminQuoteRequest {
-    pub text: String,
-    pub author: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -610,10 +372,6 @@ pub struct CompleteProfileResponse {
     pub success: bool,
 }
 
-// ============================================
-// JupyterHub / nbgrader Challenge Integration
-// ============================================
-
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct ChallengeNotebook {
     pub id: i32,
@@ -689,8 +447,6 @@ impl SubmissionStatus {
     }
 }
 
-// API Request/Response types for Challenge Notebooks
-
 #[derive(Debug, Serialize)]
 pub struct ChallengeNotebookResponse {
     pub id: i32,
@@ -726,7 +482,10 @@ pub struct ChallengeWithNotebookResponse {
     pub end_date: Option<time::OffsetDateTime>,
     #[serde(rename = "submissionStatus")]
     pub submission_status: Option<String>,
-    #[serde(rename = "sessionExpiresAt", serialize_with = "iso8601_option::serialize")]
+    #[serde(
+        rename = "sessionExpiresAt",
+        serialize_with = "iso8601_option::serialize"
+    )]
     pub session_expires_at: Option<time::OffsetDateTime>,
     #[serde(rename = "canStart")]
     pub can_start: bool,
@@ -765,7 +524,10 @@ pub struct UserSubmissionResponse {
     pub attempts_used: i64,
     #[serde(rename = "attemptsRemaining")]
     pub attempts_remaining: i64,
-    #[serde(rename = "sessionExpiresAt", serialize_with = "iso8601_option::serialize")]
+    #[serde(
+        rename = "sessionExpiresAt",
+        serialize_with = "iso8601_option::serialize"
+    )]
     pub session_expires_at: Option<time::OffsetDateTime>,
     #[serde(rename = "canSubmit")]
     pub can_submit: bool,
@@ -806,7 +568,6 @@ pub struct NbgraderWebhookPayload {
     #[serde(rename = "maxScore")]
     pub max_score: f64,
     pub timestamp: Option<String>,
-    /// Secret key to verify the webhook is from JupyterHub
     #[serde(rename = "webhookSecret")]
     pub webhook_secret: String,
 }
@@ -839,8 +600,6 @@ pub struct CloseChallengeSessionResponse {
     #[serde(rename = "serverStopped")]
     pub server_stopped: bool,
 }
-
-// Admin types for notebook management
 
 #[derive(Debug, Serialize)]
 pub struct AdminChallengeNotebookResponse {
@@ -977,7 +736,6 @@ pub struct ChallengeSubmissionLeaderboardEntry {
     pub challenge_rank: i64,
 }
 
-// Admin JupyterHub access response
 #[derive(Debug, Serialize)]
 pub struct AdminJupyterHubAccessResponse {
     pub success: bool,

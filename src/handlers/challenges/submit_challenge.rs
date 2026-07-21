@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-/// Submit a challenge - marks submission as submitted and triggers grading
+
 pub async fn submit_challenge(
     auth: AuthUser,
     State(state): State<AppState>,

@@ -12,7 +12,7 @@ use crate::{
     submissions::effective_allowed_submissions,
 };
 
-/// Get user's submission for a specific challenge
+
 pub async fn get_user_submission(
     auth: AuthUser,
     State(state): State<AppState>,

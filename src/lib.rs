@@ -2,14 +2,14 @@ pub mod auth;
 pub mod error;
 pub mod firebase;
 pub mod grading;
-pub mod jupyterhub;
-pub mod session_expiry;
-pub mod submissions;
 #[path = "handlers/mod.rs"]
 pub mod handlers;
+pub mod jupyterhub;
 pub mod models;
 pub mod routes;
 pub mod security;
+pub mod session_expiry;
+pub mod submissions;
 
 use axum::Router;
 use firebase::JwkCache;
@@ -45,10 +45,8 @@ pub fn create_app(pool: sqlx::PgPool) -> Router {
     let cors = build_cors_layer();
 
     routes::api_routes()
-        // Public uploads only — notebooks with solutions are never served statically.
+        
         .nest_service("/uploads/avatars", ServeDir::new("uploads/avatars"))
-        .nest_service("/uploads/resources", ServeDir::new("uploads/resources"))
-        .nest_service("/uploads/certificates", ServeDir::new("uploads/certificates"))
         .nest_service("/uploads/articles", ServeDir::new("uploads/articles"))
         .layer(cors)
         .with_state(app_state)

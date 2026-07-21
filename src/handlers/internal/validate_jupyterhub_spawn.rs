@@ -8,9 +8,7 @@ use crate::{
     security,
 };
 
-/// Authorize JupyterHub "Start Server" / spawn for students.
-/// Admins (`admin_*`) are always allowed. Students need an active
-/// in-progress challenge session that has not expired or been revoked.
+
 pub async fn validate_jupyterhub_spawn(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -37,7 +35,7 @@ pub async fn validate_jupyterhub_spawn(
         }));
     }
 
-    // Admin Jupyter sessions are not bound to challenge timers.
+    
     if username.starts_with("admin_") {
         return Ok(Json(ValidateSpawnResponse {
             allowed: true,

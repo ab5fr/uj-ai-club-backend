@@ -2,8 +2,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    error::AppError,
-    handlers::webhooks::update_user_ranks::update_user_ranks,
+    error::AppError, handlers::webhooks::update_user_ranks::update_user_ranks,
     models::ChallengeSubmission,
 };
 
@@ -31,7 +30,7 @@ pub struct ApplyGradeParams {
     pub manual_graded_by: Option<Uuid>,
 }
 
-/// Convert raw nbgrader or admin input into a 0–100 percentage for storage.
+
 fn percentage_score(score: f64, max_score: f64, is_manual: bool) -> f64 {
     if is_manual {
         score.clamp(0.0, 100.0)
@@ -42,12 +41,7 @@ fn percentage_score(score: f64, max_score: f64, is_manual: bool) -> f64 {
     }
 }
 
-/// Ensure `users.points` reflects only the highest graded attempt for a challenge.
-///
-/// Each attempt still stores its own `points_awarded`, but only the best attempt
-/// is marked `points_credited`. The user's total points are recalculated as the
-/// sum of per-challenge best scores so re-grades (including setting to 0) apply
-/// correctly.
+
 pub async fn sync_best_attempt_points(
     pool: &PgPool,
     user_id: Uuid,
@@ -56,12 +50,11 @@ pub async fn sync_best_attempt_points(
     #[derive(sqlx::FromRow)]
     struct AttemptRow {
         id: Uuid,
-        points_awarded: i32,
     }
 
     let attempts: Vec<AttemptRow> = sqlx::query_as(
         r#"
-        SELECT id, points_awarded
+        SELECT id
         FROM challenge_submissions
         WHERE user_id = $1 AND challenge_id = $2 AND status = 'graded'
         ORDER BY points_awarded DESC, graded_at DESC NULLS LAST, attempt_number DESC, created_at DESC
@@ -99,8 +92,8 @@ pub async fn sync_best_attempt_points(
         .await?;
     }
 
-    // Full recalc avoids stale deltas when the previously credited attempt's
-    // points_awarded was just changed (e.g. admin sets best score to 0).
+    
+    
     let total_points: i32 = sqlx::query_scalar(
         r#"
         SELECT COALESCE(SUM(challenge_best), 0)::int
@@ -126,8 +119,11 @@ pub async fn sync_best_attempt_points(
     Ok(())
 }
 
-/// Apply a grade to a submission and credit only the best attempt for the challenge.
-pub async fn apply_grade(pool: &PgPool, params: ApplyGradeParams) -> Result<ChallengeSubmission, AppError> {
+
+pub async fn apply_grade(
+    pool: &PgPool,
+    params: ApplyGradeParams,
+) -> Result<ChallengeSubmission, AppError> {
     let is_manual = params.manual_graded_by.is_some();
 
     #[derive(sqlx::FromRow)]
@@ -150,7 +146,7 @@ pub async fn apply_grade(pool: &PgPool, params: ApplyGradeParams) -> Result<Chal
     .await?
     .ok_or(AppError::NotFound)?;
 
-    // Always store score as 0–100 percentage; max_score is always 100 for display.
+    
     let percentage = percentage_score(params.score, params.max_score, is_manual);
     let points_awarded = ((percentage / 100.0) * target.max_points as f64).round() as i32;
 
@@ -199,7 +195,7 @@ pub async fn apply_grade(pool: &PgPool, params: ApplyGradeParams) -> Result<Chal
 
     sync_best_attempt_points(pool, target.user_id, target.challenge_id).await?;
 
-    // Re-fetch so response includes updated points_credited flags.
+    
     let refreshed: ChallengeSubmission =
         sqlx::query_as("SELECT * FROM challenge_submissions WHERE id = $1")
             .bind(params.submission_id)
@@ -218,8 +214,7 @@ pub struct FinalizeSubmissionParams<'a> {
     pub auto_grade_enabled: bool,
 }
 
-/// Save notebook, mark attempt grading_pending, trigger grading, and stop Jupyter.
-/// Returns `Ok(None)` if the attempt was already finalized (idempotent).
+
 pub async fn finalize_in_progress_submission(
     pool: &PgPool,
     params: FinalizeSubmissionParams<'_>,

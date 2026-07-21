@@ -1,5 +1,3 @@
--- Final schema (consolidated from historical migrations 000–008).
--- Fresh databases only — do not apply against DBs that already ran the old chain.
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,

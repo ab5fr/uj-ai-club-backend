@@ -10,7 +10,7 @@ use crate::{
     models::*,
 };
 
-/// Get challenge submission leaderboard
+
 pub async fn get_challenge_submission_leaderboard(
     _auth: AuthUser,
     State(state): State<AppState>,

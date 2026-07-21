@@ -45,7 +45,7 @@ pub fn extract_bearer_token(parts: &Parts) -> Result<String, AppError> {
     extract_bearer_from_headers(&parts.headers)
 }
 
-/// Claims for JupyterHub SSO / admin tokens
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct JupyterHubClaims {
     pub sub: String,
@@ -104,7 +104,7 @@ pub fn create_jupyterhub_admin_token(
     encode(&Header::default(), &claims, &KEYS.encoding).map_err(|e| AppError::InternalError(e.into()))
 }
 
-/// Backward-compatible helper for legacy call sites
+
 pub fn create_jupyterhub_token(
     user_id: Uuid,
     jupyterhub_username: &str,

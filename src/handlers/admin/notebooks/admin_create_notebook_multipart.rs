@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::{AppState, auth::AdminUser, error::AppError, models::*};
 
-/// Create/upload a notebook for a challenge (admin)
+
 pub async fn admin_create_notebook_multipart(
     _auth: AdminUser,
     State(state): State<AppState>,
@@ -111,14 +111,14 @@ pub async fn admin_create_notebook_multipart(
     let assignment_name =
         crate::handlers::admin::upload::assignment_name_from_filename(&notebook_filename)?;
 
-    // Verify challenge exists
+    
     let _challenge: Challenge = sqlx::query_as("SELECT * FROM challenges WHERE id = $1")
         .bind(challenge_id)
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(|| AppError::BadRequest("Challenge not found".to_string()))?;
 
-    // Check if notebook already exists for this challenge
+    
     let existing: Option<ChallengeNotebook> =
         sqlx::query_as("SELECT * FROM challenge_notebooks WHERE challenge_id = $1")
             .bind(challenge_id)
@@ -144,7 +144,7 @@ pub async fn admin_create_notebook_multipart(
         ));
     }
 
-    // Save notebook file
+    
     let notebooks_dir = "uploads/notebooks";
     tokio::fs::create_dir_all(notebooks_dir)
         .await
@@ -162,7 +162,7 @@ pub async fn admin_create_notebook_multipart(
         AppError::InternalError(anyhow::anyhow!("Failed to write notebook file: {e}"))
     })?;
 
-    // Insert into database
+    
     let notebook_result = sqlx::query_as(
         r#"
         INSERT INTO challenge_notebooks 

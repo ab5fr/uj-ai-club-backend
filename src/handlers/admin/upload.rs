@@ -13,7 +13,7 @@ fn sanitize_filename(file_name: &str) -> String {
         .collect()
 }
 
-/// Derive nbgrader assignment name from a notebook filename (stem without .ipynb).
+
 pub fn assignment_name_from_filename(file_name: &str) -> Result<String, AppError> {
     let sanitized = sanitize_filename(file_name);
     let stem = sanitized

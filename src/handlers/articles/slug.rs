@@ -1,4 +1,4 @@
-/// Turn a title into a URL-safe slug (lowercase ASCII, hyphens).
+
 pub fn slugify(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut last_was_hyphen = false;

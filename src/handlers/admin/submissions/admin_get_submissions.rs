@@ -7,7 +7,7 @@ use crate::{
     models::*,
 };
 
-/// Get all submissions (admin)
+
 pub async fn admin_get_submissions(
     _auth: AdminUser,
     State(state): State<AppState>,

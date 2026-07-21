@@ -14,7 +14,7 @@ use crate::{
     submissions::effective_allowed_submissions,
 };
 
-/// Start a challenge - creates submission record and returns JupyterHub URL
+
 pub async fn start_challenge(
     auth: AuthUser,
     State(state): State<AppState>,

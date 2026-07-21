@@ -4,7 +4,7 @@ use crate::error::AppError;
 
 const GRADING_SECRET_HEADER: &str = "X-Grading-Service-Secret";
 
-/// Shared HTTP client for internal grading-service calls with auth header.
+
 pub fn grading_client() -> Result<Client, AppError> {
     Client::builder()
         .build()
@@ -12,15 +12,12 @@ pub fn grading_client() -> Result<Client, AppError> {
 }
 
 pub fn grading_service_url() -> String {
-    std::env::var("GRADING_SERVICE_URL")
-        .unwrap_or_else(|_| "http://localhost:9100".to_string())
+    std::env::var("GRADING_SERVICE_URL").unwrap_or_else(|_| "http://localhost:9100".to_string())
 }
 
 pub fn grading_service_secret() -> Result<String, AppError> {
     let secret = std::env::var("GRADING_SERVICE_SECRET").map_err(|_| {
-        AppError::InternalError(anyhow::anyhow!(
-            "GRADING_SERVICE_SECRET must be set"
-        ))
+        AppError::InternalError(anyhow::anyhow!("GRADING_SERVICE_SECRET must be set"))
     })?;
 
     if secret.is_empty() {
@@ -39,7 +36,7 @@ pub fn apply_grading_auth(
     Ok(request.header(GRADING_SECRET_HEADER, secret))
 }
 
-/// Best-effort save of open notebooks to disk via the grading service.
+
 pub async fn save_user_notebook(
     jupyterhub_username: &str,
     notebook_filename: &str,
@@ -73,7 +70,7 @@ pub async fn save_user_notebook(
     }
 }
 
-/// Save notebooks to disk and stop the user's JupyterHub server.
+
 pub async fn close_jupyter_session(
     jupyterhub_username: &str,
     notebook_filename: &str,
@@ -93,7 +90,7 @@ pub async fn close_jupyter_session(
     Ok(())
 }
 
-/// Register a notebook with nbgrader (source + release dirs) via the grading service.
+
 pub async fn sync_notebook_to_nbgrader(
     assignment_name: &str,
     notebook_path: &str,
@@ -103,10 +100,7 @@ pub async fn sync_notebook_to_nbgrader(
     let client = grading_client()?;
     let sync_url = format!("{grading_service_url}/setup-assignment/{assignment_name}");
 
-    let nb_path = format!(
-        "/srv/notebooks/{}",
-        notebook_path.replace("uploads/", "")
-    );
+    let nb_path = format!("/srv/notebooks/{}", notebook_path.replace("uploads/", ""));
 
     let payload = serde_json::json!({
         "notebookPath": nb_path,
@@ -137,7 +131,7 @@ pub async fn sync_notebook_to_nbgrader(
     }
 }
 
-/// Remove an assignment from nbgrader (source, release, submitted dirs) via the grading service.
+
 pub async fn cleanup_nbgrader_assignment(
     assignment_name: &str,
 ) -> Result<(), crate::error::AppError> {
