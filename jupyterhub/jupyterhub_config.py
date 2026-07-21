@@ -20,12 +20,25 @@ c.JupyterHub.port = 8000
 c.JupyterHub.hub_ip = '0.0.0.0'
 c.JupyterHub.hub_connect_ip = os.environ.get('JUPYTERHUB_HUB_CONNECT_IP', 'jupyterhub')
 
-if os.environ.get('JWT_SECRET'):
+jwt_secret = os.environ.get('JWT_SECRET', '').strip()
+allow_dummy_auth = os.environ.get('JUPYTERHUB_ALLOW_DUMMY_AUTH', 'false').lower() == 'true'
+
+if jwt_secret:
     c.JupyterHub.authenticator_class = JWTAuthenticator
     c.Authenticator.allow_all = True
-else:
+elif allow_dummy_auth:
+    # Local development only. Never enable in production: DummyAuthenticator lets
+    # anyone sign in as any username (including admins) with a shared password.
     c.JupyterHub.authenticator_class = 'jupyterhub.auth.DummyAuthenticator'
-    c.DummyAuthenticator.password = 'password'
+    c.DummyAuthenticator.password = os.environ.get('JUPYTERHUB_DUMMY_PASSWORD', 'password')
+else:
+    # Fail closed. Without JWT_SECRET the SSO authenticator cannot verify tokens,
+    # and silently falling back to DummyAuthenticator would expose an open login.
+    raise RuntimeError(
+        "JWT_SECRET is not set. Refusing to start JupyterHub with an insecure "
+        "authenticator. Set JWT_SECRET (recommended), or set "
+        "JUPYTERHUB_ALLOW_DUMMY_AUTH=true for local development only."
+    )
 
 c.ConfigurableHTTPProxy.should_start = True
 c.ConfigurableHTTPProxy.api_url = 'http://127.0.0.1:8001'
