@@ -110,11 +110,25 @@ class JWTAuthenticator(Authenticator):
 
 from jupyterhub.handlers import BaseHandler
 
+def _safe_next_url(next_url: str | None) -> str:
+    """Allow only relative same-origin paths to prevent open redirects."""
+    if not next_url:
+        return "/"
+
+    candidate = next_url.strip()
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return "/"
+    if "://" in candidate or "\\" in candidate:
+        return "/"
+    if any(ord(ch) < 32 for ch in candidate):
+        return "/"
+    return candidate
+
 class TokenLoginHandler(BaseHandler):
 
     async def get(self):
         token = self.get_argument("token", None)
-        next_url = self.get_argument("next", "/")
+        next_url = _safe_next_url(self.get_argument("next", "/"))
 
         if not token:
             main_app_url = os.environ.get("MAIN_APP_URL", "https://aiclub-uj.com")

@@ -186,7 +186,14 @@ class SubmissionHandler(FileSystemEventHandler):
             'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         }
 
-        logger.info(f"Reporting grade to {WEBHOOK_URL}: {payload}")
+        logger.info(
+            "Reporting grade to %s for student=%s assignment=%s score=%s/%s",
+            WEBHOOK_URL,
+            student_id,
+            assignment_name,
+            grades['score'],
+            grades['max_score'],
+        )
 
         try:
             response = requests.post(
@@ -444,9 +451,13 @@ def remove_notebook_from_workspace(student_id, notebook_filename):
     """Delete a notebook (and its checkpoint) so a new attempt can start fresh."""
     import docker
 
+    safe_name = Path(notebook_filename).name
+    if not safe_name or safe_name != notebook_filename or ".." in safe_name:
+        raise ValueError(f"Unsafe notebook filename: {notebook_filename!r}")
+
     paths = [
-        f"/home/jovyan/work/{notebook_filename}",
-        f"/home/jovyan/work/.ipynb_checkpoints/{Path(notebook_filename).stem}-checkpoint.ipynb",
+        f"/home/jovyan/work/{safe_name}",
+        f"/home/jovyan/work/.ipynb_checkpoints/{Path(safe_name).stem}-checkpoint.ipynb",
     ]
 
     container = find_user_container(student_id)
@@ -462,10 +473,10 @@ def remove_notebook_from_workspace(student_id, notebook_filename):
         client.containers.run(
             "alpine:latest",
             [
-                "sh",
-                "-c",
-                f"rm -f /data/{notebook_filename} "
-                f"/data/.ipynb_checkpoints/{Path(notebook_filename).stem}-checkpoint.ipynb",
+                "rm",
+                "-f",
+                f"/data/{safe_name}",
+                f"/data/.ipynb_checkpoints/{Path(safe_name).stem}-checkpoint.ipynb",
             ],
             volumes={volume_name: {"bind": "/data", "mode": "rw"}},
             remove=True,
@@ -635,10 +646,18 @@ def copy_notebook_from_user(student_id, assignment_name, notebook_filename):
         volume_name = user_work_volume_name(student_id)
         logger.info(f"Trying to access volume: {volume_name}")
 
+        safe_notebook_filename = Path(notebook_filename).name
+        if (
+            not safe_notebook_filename
+            or safe_notebook_filename != notebook_filename
+            or ".." in safe_notebook_filename
+        ):
+            return False, f"Unsafe notebook filename: {notebook_filename!r}"
+
         try:
             temp_container = client.containers.run(
                 'alpine:latest',
-                'cat /data/' + notebook_filename,
+                ['cat', f'/data/{safe_notebook_filename}'],
                 volumes={volume_name: {'bind': '/data', 'mode': 'ro'}},
                 remove=True,
                 detach=False,
@@ -647,7 +666,7 @@ def copy_notebook_from_user(student_id, assignment_name, notebook_filename):
             )
 
             if temp_container:
-                dest_file = dest_dir / notebook_filename
+                dest_file = dest_dir / safe_notebook_filename
                 with open(dest_file, 'wb') as out:
                     out.write(temp_container)
                 logger.info(f"Copied notebook from volume to: {dest_file}")
@@ -720,16 +739,39 @@ def prepare_notebook_for_user(student_id, assignment_name):
         if force_fresh and workspace_has_notebook(student_id, notebook_filename):
             remove_notebook_from_workspace(student_id, notebook_filename)
 
-        source_path = f"/srv/notebooks/{notebook_path.replace('uploads/', '')}"
+        # Resolve under /srv/notebooks and reject path traversal.
+        relative = notebook_path.replace('uploads/', '', 1).lstrip('/')
+        source_path = os.path.realpath(f"/srv/notebooks/{relative}")
+        notebooks_root = os.path.realpath('/srv/notebooks')
+        if not source_path.startswith(notebooks_root + os.sep) and source_path != notebooks_root:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid notebook path'
+            }), 400
 
         if not os.path.exists(source_path):
-            source_path = f"/srv/notebooks/notebooks/{os.path.basename(notebook_path)}"
+            fallback = os.path.realpath(
+                f"/srv/notebooks/notebooks/{os.path.basename(notebook_path)}"
+            )
+            if fallback.startswith(notebooks_root + os.sep) and os.path.exists(fallback):
+                source_path = fallback
 
         if not os.path.exists(source_path):
             return jsonify({
                 'success': False,
                 'error': f'Source notebook not found at {source_path}'
             }), 404
+
+        safe_notebook_filename = Path(notebook_filename).name
+        if (
+            not safe_notebook_filename
+            or safe_notebook_filename != notebook_filename
+            or '..' in safe_notebook_filename
+        ):
+            return jsonify({
+                'success': False,
+                'error': f'Unsafe notebook filename: {notebook_filename!r}'
+            }), 400
 
         import json as json_module
         import tarfile
@@ -746,7 +788,7 @@ def prepare_notebook_for_user(student_id, assignment_name):
         if container:
             tar_stream = io.BytesIO()
             with tarfile.open(fileobj=tar_stream, mode='w') as tar:
-                tarinfo = tarfile.TarInfo(name=notebook_filename)
+                tarinfo = tarfile.TarInfo(name=safe_notebook_filename)
                 tarinfo.size = len(notebook_bytes)
                 tarinfo.uid = 1000
                 tarinfo.gid = 100
@@ -755,14 +797,14 @@ def prepare_notebook_for_user(student_id, assignment_name):
             tar_stream.seek(0)
             container.put_archive('/home/jovyan/work', tar_stream)
             logger.info(
-                f"Successfully copied {notebook_filename} to user {student_id}'s running container"
+                f"Successfully copied {safe_notebook_filename} to user {student_id}'s running container"
             )
         else:
-            write_notebook_to_user_volume(student_id, notebook_filename, notebook_bytes)
+            write_notebook_to_user_volume(student_id, safe_notebook_filename, notebook_bytes)
 
         return jsonify({
             'success': True,
-            'message': f'Notebook {notebook_filename} prepared for user {student_id}',
+            'message': f'Notebook {safe_notebook_filename} prepared for user {student_id}',
             'fresh': force_fresh,
         })
 

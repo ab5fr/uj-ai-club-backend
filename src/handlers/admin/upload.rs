@@ -3,14 +3,40 @@ use crate::error::AppError;
 const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_NOTEBOOK_BYTES: usize = 50 * 1024 * 1024;
 
-fn sanitize_filename(file_name: &str) -> String {
-    std::path::Path::new(file_name)
+pub fn sanitize_filename(file_name: &str) -> String {
+    let sanitized: String = std::path::Path::new(file_name)
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("upload")
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        .collect()
+        .collect();
+
+    if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
+        "upload".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn looks_like_image(data: &[u8]) -> bool {
+    // JPEG
+    if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return true;
+    }
+    // PNG
+    if data.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return true;
+    }
+    // GIF87a / GIF89a
+    if data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a") {
+        return true;
+    }
+    // WEBP (RIFF....WEBP)
+    if data.len() >= 12 && data.starts_with(b"RIFF") && &data[8..12] == b"WEBP" {
+        return true;
+    }
+    false
 }
 
 
@@ -53,6 +79,12 @@ pub fn validate_image_upload(file_name: &str, data: &[u8]) -> Result<(), AppErro
     if !allowed.iter().any(|ext| sanitized.ends_with(ext)) {
         return Err(AppError::BadRequest(
             "Only JPG, PNG, WEBP, and GIF images are allowed".to_string(),
+        ));
+    }
+
+    if !looks_like_image(data) {
+        return Err(AppError::BadRequest(
+            "Uploaded file is not a valid JPG, PNG, WEBP, or GIF image".to_string(),
         ));
     }
 
