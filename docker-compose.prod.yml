@@ -95,7 +95,7 @@ services:
 
   watchtower:
     image: containrrr/watchtower:1.7.1
-    command: --label-enable --cleanup --rolling-restart --interval 60
+    command: --api-version 1.44 --label-enable --cleanup --rolling-restart --interval 60
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
