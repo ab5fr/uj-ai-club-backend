@@ -29,8 +29,14 @@ if jwt_secret:
 elif allow_dummy_auth:
     # Local development only. Never enable in production: DummyAuthenticator lets
     # anyone sign in as any username (including admins) with a shared password.
+    dummy_password = os.environ.get('JUPYTERHUB_DUMMY_PASSWORD', '').strip()
+    if not dummy_password:
+        raise RuntimeError(
+            "JUPYTERHUB_ALLOW_DUMMY_AUTH=true requires JUPYTERHUB_DUMMY_PASSWORD "
+            "to be set to a non-empty value. Refusing to use a default password."
+        )
     c.JupyterHub.authenticator_class = 'jupyterhub.auth.DummyAuthenticator'
-    c.DummyAuthenticator.password = os.environ.get('JUPYTERHUB_DUMMY_PASSWORD', 'password')
+    c.DummyAuthenticator.password = dummy_password
 else:
     # Fail closed. Without JWT_SECRET the SSO authenticator cannot verify tokens,
     # and silently falling back to DummyAuthenticator would expose an open login.
@@ -110,6 +116,13 @@ c.JupyterHub.implicit_spawn_seconds = 0.5
 c.Spawner.start_timeout = 120
 c.Spawner.http_timeout = 120
 
+jupyterhub_api_token = os.environ.get('JUPYTERHUB_API_TOKEN', '').strip()
+if not jupyterhub_api_token or jupyterhub_api_token == 'default-token':
+    raise RuntimeError(
+        "JUPYTERHUB_API_TOKEN must be set to a non-empty value that is not "
+        "'default-token'. Refusing to start with a weak or missing API token."
+    )
+
 c.JupyterHub.services = [
     {
         'name': 'idle-culler',
@@ -139,7 +152,7 @@ c.JupyterHub.services = [
     },
     {
         'name': 'grading-service',
-        'api_token': os.environ.get('JUPYTERHUB_API_TOKEN', 'default-token'),
+        'api_token': jupyterhub_api_token,
     },
 ]
 
@@ -227,9 +240,12 @@ def _validate_spawn_with_backend(username):
     import urllib.request
 
     backend_url = os.environ.get('BACKEND_URL', 'http://api:8000').rstrip('/')
-    secret = os.environ.get('GRADING_SERVICE_SECRET', '')
+    secret = (
+        os.environ.get('INTERNAL_SERVICE_SECRET', '').strip()
+        or os.environ.get('GRADING_SERVICE_SECRET', '').strip()
+    )
     if not secret:
-        return {'allowed': False, 'message': 'GRADING_SERVICE_SECRET not configured'}
+        return {'allowed': False, 'message': 'INTERNAL_SERVICE_SECRET (or GRADING_SERVICE_SECRET) not configured'}
 
     req = urllib.request.Request(
         f'{backend_url}/internal/jupyterhub/validate-spawn',

@@ -14,7 +14,7 @@ pub async fn validate_jupyterhub_spawn(
     headers: HeaderMap,
     Json(body): Json<ValidateSpawnRequest>,
 ) -> Result<Json<ValidateSpawnResponse>, AppError> {
-    let expected_secret = crate::grading::grading_service_secret()?;
+    let expected_secret = crate::grading::internal_service_secret()?;
 
     let provided = headers
         .get("X-Grading-Service-Secret")

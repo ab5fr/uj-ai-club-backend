@@ -8,7 +8,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     networks:
       - internal
     healthcheck:
@@ -41,7 +41,7 @@ services:
       # Bind host uploads/ so `cargo run` on the host and Docker share notebooks
       - ./uploads:/srv/notebooks
     ports:
-      - "8888:8000"
+      - "127.0.0.1:8888:8000"
     networks:
       - internal
       - students
@@ -64,7 +64,7 @@ services:
       - nbgrader_course:/srv/nbgrader/course
       - nbgrader_data:/data
     ports:
-      - "9100:9100"
+      - "127.0.0.1:9100:9100"
     networks:
       - internal
     restart: unless-stopped

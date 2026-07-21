@@ -30,8 +30,58 @@ WEBHOOK_URL = os.environ.get('GRADING_WEBHOOK_URL', 'http://backend:8000/webhook
 WEBHOOK_SECRET = os.environ.get('NBGRADER_WEBHOOK_SECRET', '')
 DOCKER_SOCKET = os.environ.get('DOCKER_SOCKET', '/var/run/docker.sock')
 GRADING_SERVICE_SECRET = os.environ.get('GRADING_SERVICE_SECRET', '')
+NOTEBOOKS_ROOT = os.path.realpath('/srv/notebooks')
 
 app = Flask(__name__)
+
+
+def sanitize_assignment_name(assignment_name):
+    """Reject assignment names that could escape course directories."""
+    if not assignment_name or not isinstance(assignment_name, str):
+        raise ValueError('Invalid assignment name')
+    name = assignment_name.strip()
+    if (
+        not name
+        or name in ('.', '..')
+        or '/' in name
+        or '\\' in name
+        or '..' in name
+    ):
+        raise ValueError('Invalid assignment name')
+    return name
+
+
+def resolve_notebook_under_root(notebook_path, notebooks_root=None):
+    """
+    Resolve a notebook path under /srv/notebooks and reject path traversal.
+    Accepts absolute paths under the root, or relative paths (optionally
+    prefixed with uploads/).
+    """
+    root = os.path.realpath(notebooks_root or NOTEBOOKS_ROOT)
+    if not notebook_path or not isinstance(notebook_path, str):
+        raise ValueError('Invalid notebook path')
+
+    raw = notebook_path.strip()
+    if not raw:
+        raise ValueError('Invalid notebook path')
+
+    if os.path.isabs(raw):
+        source_path = os.path.realpath(raw)
+    else:
+        relative = raw.replace('uploads/', '', 1).lstrip('/')
+        source_path = os.path.realpath(os.path.join(root, relative))
+
+    if not source_path.startswith(root + os.sep) and source_path != root:
+        raise ValueError('Invalid notebook path')
+
+    if not os.path.exists(source_path):
+        fallback = os.path.realpath(os.path.join(root, 'notebooks', os.path.basename(raw)))
+        if fallback.startswith(root + os.sep) and os.path.exists(fallback):
+            return fallback
+        raise FileNotFoundError(f'Source notebook not found at {source_path}')
+
+    return source_path
+
 
 @app.before_request
 def require_internal_auth():
@@ -705,6 +755,11 @@ def prepare_notebook_for_user(student_id, assignment_name):
         "forceFresh": false
     }
     """
+    try:
+        assignment_name = sanitize_assignment_name(assignment_name)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
     logger.info(f"Preparing notebook for user {student_id}, assignment {assignment_name}")
 
     data = request.get_json() or {}
@@ -739,28 +794,12 @@ def prepare_notebook_for_user(student_id, assignment_name):
         if force_fresh and workspace_has_notebook(student_id, notebook_filename):
             remove_notebook_from_workspace(student_id, notebook_filename)
 
-        # Resolve under /srv/notebooks and reject path traversal.
-        relative = notebook_path.replace('uploads/', '', 1).lstrip('/')
-        source_path = os.path.realpath(f"/srv/notebooks/{relative}")
-        notebooks_root = os.path.realpath('/srv/notebooks')
-        if not source_path.startswith(notebooks_root + os.sep) and source_path != notebooks_root:
-            return jsonify({
-                'success': False,
-                'error': 'Invalid notebook path'
-            }), 400
-
-        if not os.path.exists(source_path):
-            fallback = os.path.realpath(
-                f"/srv/notebooks/notebooks/{os.path.basename(notebook_path)}"
-            )
-            if fallback.startswith(notebooks_root + os.sep) and os.path.exists(fallback):
-                source_path = fallback
-
-        if not os.path.exists(source_path):
-            return jsonify({
-                'success': False,
-                'error': f'Source notebook not found at {source_path}'
-            }), 404
+        try:
+            source_path = resolve_notebook_under_root(notebook_path)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        except FileNotFoundError as e:
+            return jsonify({'success': False, 'error': str(e)}), 404
 
         safe_notebook_filename = Path(notebook_filename).name
         if (
@@ -873,6 +912,11 @@ def submit_for_grading(student_id, assignment_name):
     Submit a notebook for grading.
     Copies the notebook from user's container to course/submitted and triggers grading.
     """
+    try:
+        assignment_name = sanitize_assignment_name(assignment_name)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
     logger.info(f"Received submission request: student={student_id}, assignment={assignment_name}")
 
     data = request.get_json() or {}
@@ -883,15 +927,11 @@ def submit_for_grading(student_id, assignment_name):
     if not source_dir.exists() and notebook_path:
         logger.info(f"Setting up source assignment {assignment_name} before grading")
         try:
-            source_notebook = f"/srv/notebooks/{notebook_path.replace('uploads/', '')}"
-            if not os.path.exists(source_notebook):
-                source_notebook = f"/srv/notebooks/notebooks/{os.path.basename(notebook_path)}"
-
-            if os.path.exists(source_notebook):
-                setup_nbgrader_assignment(source_notebook, assignment_name)
-                logger.info(f"Source assignment {assignment_name} set up successfully")
-            else:
-                logger.warning(f"Could not find source notebook to set up assignment")
+            source_notebook = resolve_notebook_under_root(notebook_path)
+            setup_nbgrader_assignment(source_notebook, assignment_name)
+            logger.info(f"Source assignment {assignment_name} set up successfully")
+        except (ValueError, FileNotFoundError) as e:
+            logger.warning(f"Could not set up source assignment: {e}")
         except Exception as e:
             logger.error(f"Failed to set up source assignment: {e}")
 
@@ -925,6 +965,11 @@ def trigger_grading(student_id, assignment_name):
     """
     Directly trigger grading for an existing submission.
     """
+    try:
+        assignment_name = sanitize_assignment_name(assignment_name)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
     logger.info(f"Received grading request: student={student_id}, assignment={assignment_name}")
 
     submission_dir = Path('/srv/nbgrader/course') / 'submitted' / student_id / assignment_name
@@ -999,6 +1044,11 @@ def setup_assignment(assignment_name):
         "maxPoints": 100
     }
     """
+    try:
+        assignment_name = sanitize_assignment_name(assignment_name)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
     logger.info(f"Setting up assignment: {assignment_name}")
 
     data = request.get_json() or {}
@@ -1012,13 +1062,18 @@ def setup_assignment(assignment_name):
         }), 400
 
     try:
-        result = setup_nbgrader_assignment(notebook_path, assignment_name)
+        resolved_path = resolve_notebook_under_root(notebook_path)
+        result = setup_nbgrader_assignment(resolved_path, assignment_name)
         return jsonify({
             'success': True,
             'message': f'Assignment {assignment_name} set up successfully',
             'sourcePath': result.get('source_path'),
             'releasePath': result.get('release_path')
         })
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except FileNotFoundError as e:
+        return jsonify({'success': False, 'error': str(e)}), 404
     except Exception as e:
         logger.error(f"Failed to setup assignment: {e}")
         return jsonify({
@@ -1032,6 +1087,11 @@ def cleanup_assignment(assignment_name):
     Remove all nbgrader directories for an assignment when a challenge is deleted.
     Cleans up: source, release, submitted, autograded, and feedback directories.
     """
+    try:
+        assignment_name = sanitize_assignment_name(assignment_name)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
     logger.info(f"Cleaning up assignment: {assignment_name}")
 
     course_dir = Path('/srv/nbgrader/course')
@@ -1085,7 +1145,7 @@ def setup_nbgrader_assignment(source_notebook_path, assignment_name, course_dir=
     3. Place the student version in the release directory
 
     Args:
-        source_notebook_path: Path to the source notebook
+        source_notebook_path: Path to the source notebook (must already be resolved under /srv/notebooks)
         assignment_name: Name of the assignment
         course_dir: Base directory for nbgrader course
 
@@ -1096,11 +1156,11 @@ def setup_nbgrader_assignment(source_notebook_path, assignment_name, course_dir=
     import shutil
     import re
 
+    assignment_name = sanitize_assignment_name(assignment_name)
+    source_notebook_path = resolve_notebook_under_root(source_notebook_path)
+
     logger.info(f"Setting up nbgrader assignment: {assignment_name}")
     logger.info(f"Source notebook: {source_notebook_path}")
-
-    if not os.path.exists(source_notebook_path):
-        raise FileNotFoundError(f"Source notebook not found: {source_notebook_path}")
 
     source_dir = Path(course_dir) / 'source' / assignment_name
     release_dir = Path(course_dir) / 'release' / assignment_name

@@ -8,6 +8,8 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::fmt::init();
 
+    uj_ai_club_backend::security::validate_startup_secrets().map_err(anyhow::Error::msg)?;
+
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         let pg_user = std::env::var("POSTGRES_USER").unwrap_or_else(|_| "uj_ai_club".to_string());
         let pg_pass = std::env::var("POSTGRES_PASSWORD").unwrap();

@@ -29,6 +29,18 @@ pub fn grading_service_secret() -> Result<String, AppError> {
     Ok(secret)
 }
 
+/// Secret for `/internal/*` routes. Prefers `INTERNAL_SERVICE_SECRET`, falls
+/// back to `GRADING_SERVICE_SECRET` for backwards compatibility.
+pub fn internal_service_secret() -> Result<String, AppError> {
+    if let Ok(secret) = std::env::var("INTERNAL_SERVICE_SECRET") {
+        let trimmed = secret.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    grading_service_secret()
+}
+
 pub fn apply_grading_auth(
     request: reqwest::RequestBuilder,
 ) -> Result<reqwest::RequestBuilder, AppError> {

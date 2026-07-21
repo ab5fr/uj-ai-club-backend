@@ -9,7 +9,10 @@ from traitlets import Bool, Unicode
 
 def _validate_token_with_backend(token: str) -> dict | None:
     backend_url = os.environ.get("BACKEND_URL", "http://backend:8000").rstrip("/")
-    secret = os.environ.get("GRADING_SERVICE_SECRET", "")
+    secret = (
+        os.environ.get("INTERNAL_SERVICE_SECRET", "").strip()
+        or os.environ.get("GRADING_SERVICE_SECRET", "").strip()
+    )
     if not secret:
         return None
 

@@ -60,6 +60,7 @@ impl JwkCache {
 struct TokenClaims {
     sub: String,
     email: Option<String>,
+    email_verified: Option<bool>,
     name: Option<String>,
     picture: Option<String>,
     firebase: FirebaseBlock,
@@ -87,6 +88,10 @@ pub async fn verify_id_token(
 
     let token_data = decode::<TokenClaims>(token, &decoding_key, &validation)
         .map_err(|_| AppError::AuthError)?;
+
+    if token_data.claims.email_verified != Some(true) {
+        return Err(AppError::AuthError);
+    }
 
     let email = token_data.claims.email.ok_or(AppError::AuthError)?;
 

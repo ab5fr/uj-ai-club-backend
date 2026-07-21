@@ -13,11 +13,11 @@ pub mod submissions;
 
 use axum::Router;
 use firebase::JwkCache;
-use http::HeaderValue;
-use http::header::X_CONTENT_TYPE_OPTIONS;
+use http::header::{AUTHORIZATION, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS};
+use http::{HeaderValue, Method};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 
@@ -86,6 +86,13 @@ fn build_cors_layer() -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
-        .allow_methods(Any)
-        .allow_headers(Any)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([AUTHORIZATION, CONTENT_TYPE])
 }

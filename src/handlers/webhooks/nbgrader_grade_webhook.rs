@@ -1,12 +1,37 @@
 use axum::{Json, extract::State};
+use chrono::{DateTime, Utc};
 
 use crate::{
     AppState,
     error::AppError,
     models::*,
-    submissions::{apply_grade, ApplyGradeParams},
+    submissions::{ApplyGradeParams, apply_grade},
 };
 
+const WEBHOOK_MAX_SKEW_SECS: i64 = 300;
+
+fn validate_webhook_timestamp(timestamp: Option<&str>) -> Result<(), AppError> {
+    let Some(raw) = timestamp.filter(|s| !s.is_empty()) else {
+        return Err(AppError::ValidationError(
+            "Webhook timestamp is required".to_string(),
+        ));
+    };
+
+    let parsed = DateTime::parse_from_rfc3339(raw)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|_| {
+            AppError::ValidationError("Webhook timestamp is invalid".to_string())
+        })?;
+
+    let skew = (Utc::now() - parsed).num_seconds().abs();
+    if skew > WEBHOOK_MAX_SKEW_SECS {
+        return Err(AppError::ValidationError(
+            "Webhook timestamp is outside the allowed window".to_string(),
+        ));
+    }
+
+    Ok(())
+}
 
 pub async fn nbgrader_grade_webhook(
     State(state): State<AppState>,
@@ -25,6 +50,8 @@ pub async fn nbgrader_grade_webhook(
     if !crate::security::constant_time_eq(&payload.webhook_secret, &expected_secret) {
         return Err(AppError::AuthError);
     }
+
+    validate_webhook_timestamp(payload.timestamp.as_deref())?;
 
     let notebook: ChallengeNotebook =
         sqlx::query_as("SELECT * FROM challenge_notebooks WHERE assignment_name = $1")
