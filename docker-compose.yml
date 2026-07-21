@@ -29,14 +29,17 @@ services:
     environment:
       DOCKER_NETWORK_NAME: internal
       STUDENT_ISOLATED_NETWORK_NAME: students
-      BACKEND_URL: ${BACKEND_URL:-http://backend:8000}
+      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:8000}
       MAIN_APP_URL: ${MAIN_APP_URL:-http://localhost:3000}
       NOTEBOOKS_VOLUME_NAME: uj-ai-club-backend_uploads_data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - nbgrader_exchange:/srv/nbgrader/exchange
       - jupyterhub_data:/data
-      - uploads_data:/srv/notebooks
+      # Bind host uploads/ so `cargo run` on the host and Docker share notebooks
+      - ./uploads:/srv/notebooks
     ports:
       - "8888:8000"
     networks:
@@ -50,10 +53,13 @@ services:
     env_file: .env
     environment:
       GRADING_SERVICE_SECRET: ${GRADING_SERVICE_SECRET}
-      GRADING_WEBHOOK_URL: ${GRADING_WEBHOOK_URL:-http://backend:8000/webhooks/nbgrader/grade}
+      GRADING_WEBHOOK_URL: ${GRADING_WEBHOOK_URL:-http://host.docker.internal:8000/webhooks/nbgrader/grade}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - uploads_data:/srv/notebooks
+      # Same host folder the Rust API writes to under cargo run
+      - ./uploads:/srv/notebooks
       - nbgrader_exchange:/srv/nbgrader/exchange
       - nbgrader_course:/srv/nbgrader/course
       - nbgrader_data:/data
@@ -65,7 +71,6 @@ services:
 
 volumes:
   postgres_data:
-  uploads_data:
   nbgrader_exchange:
   nbgrader_course:
   nbgrader_data:
