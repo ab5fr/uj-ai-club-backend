@@ -84,10 +84,23 @@ pub async fn admin_get_submission_file(
         .unwrap_or("application/x-ipynb+json")
         .to_string();
 
-    let content_disposition = if download {
-        format!("attachment; filename=\"{}\"", row.notebook_filename)
-    } else {
-        format!("inline; filename=\"{}\"", row.notebook_filename)
+    let content_disposition = {
+        let safe_filename = row
+            .notebook_filename
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+            .collect::<String>();
+        let safe_filename = if safe_filename.is_empty() {
+            "notebook.ipynb".to_string()
+        } else {
+            safe_filename
+        };
+
+        if download {
+            format!("attachment; filename=\"{safe_filename}\"")
+        } else {
+            format!("inline; filename=\"{safe_filename}\"")
+        }
     };
 
     let bytes = response

@@ -104,25 +104,6 @@ pub fn create_jupyterhub_admin_token(
     encode(&Header::default(), &claims, &KEYS.encoding).map_err(|e| AppError::InternalError(e.into()))
 }
 
-
-pub fn create_jupyterhub_token(
-    user_id: Uuid,
-    jupyterhub_username: &str,
-) -> Result<String, AppError> {
-    let now = chrono::Utc::now();
-    let claims = JupyterHubClaims {
-        sub: user_id.to_string(),
-        username: jupyterhub_username.to_string(),
-        exp: (now + chrono::Duration::hours(1)).timestamp(),
-        iat: now.timestamp(),
-        purpose: "jupyterhub_sso".to_string(),
-        jti: None,
-        submission_id: None,
-    };
-
-    encode(&Header::default(), &claims, &KEYS.encoding).map_err(|e| AppError::InternalError(e.into()))
-}
-
 async fn resolve_user_id(state: &AppState, token: &str) -> Result<Uuid, AppError> {
     let claims = firebase::verify_id_token(
         &state.jwk_cache,

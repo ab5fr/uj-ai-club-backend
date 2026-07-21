@@ -14,9 +14,7 @@ pub async fn validate_jupyterhub_spawn(
     headers: HeaderMap,
     Json(body): Json<ValidateSpawnRequest>,
 ) -> Result<Json<ValidateSpawnResponse>, AppError> {
-    let expected_secret = std::env::var("GRADING_SERVICE_SECRET").map_err(|_| {
-        AppError::InternalError(anyhow::anyhow!("GRADING_SERVICE_SECRET must be set"))
-    })?;
+    let expected_secret = crate::grading::grading_service_secret()?;
 
     let provided = headers
         .get("X-Grading-Service-Secret")
@@ -35,11 +33,28 @@ pub async fn validate_jupyterhub_spawn(
         }));
     }
 
-    
-    if username.starts_with("admin_") {
+    if let Some(admin_id_hex) = username.strip_prefix("admin_") {
+        let is_admin: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM users
+                WHERE role = 'admin'
+                  AND REPLACE(id::text, '-', '') = $1
+            )
+            "#,
+        )
+        .bind(admin_id_hex)
+        .fetch_one(&state.pool)
+        .await?;
+
         return Ok(Json(ValidateSpawnResponse {
-            allowed: true,
-            message: None,
+            allowed: is_admin,
+            message: if is_admin {
+                None
+            } else {
+                Some("Admin access required".to_string())
+            },
         }));
     }
 

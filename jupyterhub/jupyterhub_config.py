@@ -24,8 +24,9 @@ if os.environ.get('JWT_SECRET'):
     c.JupyterHub.authenticator_class = JWTAuthenticator
     c.Authenticator.allow_all = True
 else:
-    c.JupyterHub.authenticator_class = 'jupyterhub.auth.DummyAuthenticator'
-    c.DummyAuthenticator.password = 'password'
+    raise RuntimeError(
+        "JWT_SECRET must be set. Refusing to start JupyterHub with DummyAuthenticator."
+    )
 
 c.ConfigurableHTTPProxy.should_start = True
 c.ConfigurableHTTPProxy.api_url = 'http://127.0.0.1:8001'
@@ -242,12 +243,11 @@ def pre_spawn_hook(spawner):
     username = spawner.user.name
     spawner.log.info(f"Pre-spawn hook for user: {username}")
 
-    if username.startswith('user_'):
-        validation = _validate_spawn_with_backend(username)
-        if not validation.get('allowed'):
-            message = validation.get('message') or 'Challenge session expired'
-            spawner.log.warning(f"Spawn denied for {username}: {message}")
-            raise Exception(message)
+    validation = _validate_spawn_with_backend(username)
+    if not validation.get('allowed'):
+        message = validation.get('message') or 'Spawn denied'
+        spawner.log.warning(f"Spawn denied for {username}: {message}")
+        raise Exception(message)
 
     cfg = _read_spawn_config_from_volume(username) or {}
     network_disabled = cfg.get('networkDisabled', True)

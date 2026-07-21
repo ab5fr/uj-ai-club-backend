@@ -2,18 +2,22 @@ use axum::{Json, extract::State, http::HeaderMap};
 
 use crate::{AppState, error::AppError, models::*};
 
+const MAX_MESSAGE_CHARS: usize = 5000;
+
 fn client_ip(headers: &HeaderMap) -> Option<String> {
+    // Prefer X-Real-IP set by the trusted reverse proxy. Do not trust the leftmost
+    // X-Forwarded-For hop, which clients can spoof to bypass rate limits.
     headers
-        .get("x-forwarded-for")
+        .get("x-real-ip")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
         .map(str::trim)
         .filter(|ip| !ip.is_empty())
         .map(str::to_string)
         .or_else(|| {
             headers
-                .get("x-real-ip")
+                .get("x-forwarded-for")
                 .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(',').next_back())
                 .map(str::trim)
                 .filter(|ip| !ip.is_empty())
                 .map(str::to_string)
@@ -117,6 +121,12 @@ pub async fn create_contact(
 
     if !email.contains('@') || email.len() > 255 || name.len() > 255 {
         return Err(AppError::BadRequest("Invalid contact details.".to_string()));
+    }
+
+    if message.chars().count() > MAX_MESSAGE_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "Message is too long (max {MAX_MESSAGE_CHARS} characters)."
+        )));
     }
 
     let sender_ip = client_ip(&headers);
