@@ -144,11 +144,12 @@ uj-ai-club-backend/
 
 Monorepo root also has:
 
-| File | Purpose |
-|------|---------|
-| `docker-compose.dev.yml` | Full local stack: database, backend, frontend, JupyterHub, grading |
-| `docker-compose.prod.yml` | Production: 3× backend + nginx LB + JupyterHub + grading + Watchtower |
-| `infra/nginx/conf.d/` | Nginx TLS + upstream for `api.uj-aiclub.com` / `jupyter.aiclub-uj.com` |
+| File                      | Purpose                                                                |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `docker-compose.dev.yml`  | Full local stack: database, backend, frontend, JupyterHub, grading     |
+| `docker-compose.prod.yml` | Production: 3× backend + nginx LB + JupyterHub + grading + Watchtower  |
+| `infra/nginx/conf.d/`     | Nginx TLS + upstream for `api.uj-aiclub.com` / `jupyter.aiclub-uj.com` |
+
 ---
 
 ## Prerequisites
@@ -271,10 +272,10 @@ DATABASE_URL=postgres://your_user:your_pass@localhost:5432/uj_ai_club
 
 Migrations in `migrations/` are applied automatically on startup:
 
-| File                                           | Purpose                                                                                          |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `000_init.sql`                                 | Core schema: users, challenges, leaderboards, articles, contact, notebooks, submissions          |
-| `001_drop_resources_certificates_quotes.sql`   | Drops legacy `resources`, `certificates`, and `quotes` tables (for DBs that already had them)    |
+| File                                         | Purpose                                                                                       |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `000_init.sql`                               | Core schema: users, challenges, leaderboards, articles, contact, notebooks, submissions       |
+| `001_drop_resources_certificates_quotes.sql` | Drops legacy `resources`, `certificates`, and `quotes` tables (for DBs that already had them) |
 
 **Key tables:** `users`, `challenges`, `challenge_notebooks`, `challenge_submissions`, `leaderboards`, `leaderboard_entries`, `challenge_leaderboard`, `user_stats`, `contact_messages`, `articles`
 
@@ -316,6 +317,10 @@ docker compose up -d --build database jupyterhub grading
 ```
 
 Then run the API on the host with `cargo run` (or use `--profile docker-backend`).
+
+Local Compose bind-mounts `./uploads` into JupyterHub and grading so notebooks uploaded by the host API are visible inside Docker. Keep that folder in sync with what you create via the admin UI.
+
+Set `BACKEND_URL` / `GRADING_WEBHOOK_URL` to `http://host.docker.internal:8000` (not `localhost`) so containers can reach the host API for JupyterHub SSO and webhooks.
 
 | Service    | Port | Description              |
 | ---------- | ---- | ------------------------ |
@@ -387,12 +392,12 @@ All routes are defined in `src/routes/mod.rs`. Base URL: `http://localhost:8000`
 
 ### Public content
 
-| Method | Route                | Auth | Description                           |
-| ------ | -------------------- | ---- | ------------------------------------- |
-| GET    | `/leaderboards`      | None | Global leaderboard                    |
-| GET    | `/articles`          | None | List articles                         |
-| GET    | `/articles/{slug}`   | None | Article detail                        |
-| POST   | `/contact`           | None | Submit contact message (rate-limited) |
+| Method | Route              | Auth | Description                           |
+| ------ | ------------------ | ---- | ------------------------------------- |
+| GET    | `/leaderboards`    | None | Global leaderboard                    |
+| GET    | `/articles`        | None | List articles                         |
+| GET    | `/articles/{slug}` | None | Article detail                        |
+| POST   | `/contact`         | None | Submit contact message (rate-limited) |
 
 ### Challenges (authenticated)
 
@@ -422,23 +427,23 @@ All routes are defined in `src/routes/mod.rs`. Base URL: `http://localhost:8000`
 
 ### Admin (admin role required)
 
-| Method         | Route                                 | Description                        |
-| -------------- | ------------------------------------- | ---------------------------------- |
-| GET/POST       | `/admin/articles`                     | List / create articles             |
-| GET/PUT/DELETE | `/admin/articles/{id}`                | Read / update / delete article     |
-| PATCH          | `/admin/articles/{id}/visibility`     | Toggle visibility                  |
-| GET/POST       | `/admin/challenges`                   | List / create challenges           |
-| GET/PUT/DELETE | `/admin/challenges/{id}`              | Read / update / delete challenge   |
-| PATCH          | `/admin/challenges/{id}/visibility`   | Toggle visibility                  |
-| GET            | `/admin/challenges/{id}/notebook`     | Get notebook for challenge         |
-| GET/POST       | `/admin/notebooks`                    | List / create notebooks            |
-| PUT/DELETE     | `/admin/notebooks/{id}`               | Update / delete notebook           |
-| POST           | `/admin/notebooks/{id}/sync`          | Sync notebook to nbgrader          |
-| GET            | `/admin/submissions`                  | List all submissions               |
-| GET            | `/admin/submissions/{id}/access`      | Get submission access info         |
-| GET            | `/admin/submissions/{id}/file`        | Download submission file           |
-| POST           | `/admin/submissions/{id}/grade`       | Manually grade submission          |
-| GET            | `/admin/contact-messages`             | List contact messages              |
+| Method         | Route                               | Description                      |
+| -------------- | ----------------------------------- | -------------------------------- |
+| GET/POST       | `/admin/articles`                   | List / create articles           |
+| GET/PUT/DELETE | `/admin/articles/{id}`              | Read / update / delete article   |
+| PATCH          | `/admin/articles/{id}/visibility`   | Toggle visibility                |
+| GET/POST       | `/admin/challenges`                 | List / create challenges         |
+| GET/PUT/DELETE | `/admin/challenges/{id}`            | Read / update / delete challenge |
+| PATCH          | `/admin/challenges/{id}/visibility` | Toggle visibility                |
+| GET            | `/admin/challenges/{id}/notebook`   | Get notebook for challenge       |
+| GET/POST       | `/admin/notebooks`                  | List / create notebooks          |
+| PUT/DELETE     | `/admin/notebooks/{id}`             | Update / delete notebook         |
+| POST           | `/admin/notebooks/{id}/sync`        | Sync notebook to nbgrader        |
+| GET            | `/admin/submissions`                | List all submissions             |
+| GET            | `/admin/submissions/{id}/access`    | Get submission access info       |
+| GET            | `/admin/submissions/{id}/file`      | Download submission file         |
+| POST           | `/admin/submissions/{id}/grade`     | Manually grade submission        |
+| GET            | `/admin/contact-messages`           | List contact messages            |
 
 ### Static files
 
@@ -506,7 +511,7 @@ See [`jupyterhub/README.md`](jupyterhub/README.md) for detailed JupyterHub/nbgra
 
 Uploaded files (avatars, article covers, notebooks) are stored in the `uploads/` directory and served statically at `/uploads/*`.
 
-In Docker, the `uploads_data` volume is shared between the API, JupyterHub, and grading services.
+In local Compose, `./uploads` is bind-mounted into JupyterHub and grading (so host `cargo run` and Docker share files). Production Compose still uses the `uploads_data` named volume.
 
 Admin article/notebook creation endpoints accept `multipart/form-data`.
 
@@ -541,13 +546,13 @@ For JupyterHub, set `STUDENT_NOTEBOOK_IMAGE=ghcr.io/ab5fr/uj-ai-club-backend-stu
 
 ### Production
 
-| Component  | Host                        | URL                                                    |
-| ---------- | --------------------------- | ------------------------------------------------------ |
-| Frontend   | Vercel                      | [uj-aiclub.com](https://uj-aiclub.com)                 |
-| API        | Docker (3×) + nginx         | [api.uj-aiclub.com](https://api.uj-aiclub.com)         |
-| Database   | Neon PostgreSQL             | —                                                      |
-| JupyterHub | Docker                      | [jupyter.aiclub-uj.com](https://jupyter.aiclub-uj.com) |
-| Auth       | Firebase                    | —                                                      |
+| Component  | Host                | URL                                                    |
+| ---------- | ------------------- | ------------------------------------------------------ |
+| Frontend   | Vercel              | [uj-aiclub.com](https://uj-aiclub.com)                 |
+| API        | Docker (3×) + nginx | [api.uj-aiclub.com](https://api.uj-aiclub.com)         |
+| Database   | Neon PostgreSQL     | —                                                      |
+| JupyterHub | Docker              | [jupyter.aiclub-uj.com](https://jupyter.aiclub-uj.com) |
+| Auth       | Firebase            | —                                                      |
 
 Production stack lives at the monorepo root (`docker-compose.prod.yml`): three `backend-*` replicas behind nginx, JupyterHub, grading, certbot, and Watchtower. Images come from GHCR. The frontend is on Vercel with `NEXT_PUBLIC_API_URL=https://api.uj-aiclub.com`.
 
@@ -569,16 +574,16 @@ Integration tests would require a running PostgreSQL instance and valid Firebase
 
 ## Troubleshooting
 
-| Problem                                  | Likely cause                                            | Fix                                                             |
-| ---------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------- |
-| Panic: `FIREBASE_PROJECT_ID must be set` | Missing env var                                         | Add `FIREBASE_PROJECT_ID` to `.env`                             |
-| Panic: `JWT_SECRET`                      | Missing env var                                         | Add `JWT_SECRET` to `.env`                                      |
-| Database connection failed               | Wrong `DATABASE_URL`                                    | Verify connection string; for Neon, check branch is active      |
-| Migrations fail                          | Schema conflict                                         | Check migration order; for fresh DB, all 6 should apply cleanly |
-| `401 Unauthorized` on all routes         | Invalid/expired Firebase token                          | Ensure frontend and backend use the same Firebase project       |
+| Problem                                  | Likely cause                                            | Fix                                                                     |
+| ---------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Panic: `FIREBASE_PROJECT_ID must be set` | Missing env var                                         | Add `FIREBASE_PROJECT_ID` to `.env`                                     |
+| Panic: `JWT_SECRET`                      | Missing env var                                         | Add `JWT_SECRET` to `.env`                                              |
+| Database connection failed               | Wrong `DATABASE_URL`                                    | Verify connection string; for Neon, check branch is active              |
+| Migrations fail                          | Schema conflict                                         | Check migration order; for fresh DB, all 6 should apply cleanly         |
+| `401 Unauthorized` on all routes         | Invalid/expired Firebase token                          | Ensure frontend and backend use the same Firebase project               |
 | Challenge start fails                    | JupyterHub not running                                  | Start root stack: `docker compose -f docker-compose.dev.yml up --build` |
-| Grading webhook not received             | Wrong `NBGRADER_WEBHOOK_SECRET` or grading service down | Check grading service logs; verify webhook URL                  |
-| CORS errors                              | Backend CORS is permissive (`Any`)                      | CORS should not block requests; check if API is reachable       |
+| Grading webhook not received             | Wrong `NBGRADER_WEBHOOK_SECRET` or grading service down | Check grading service logs; verify webhook URL                          |
+| CORS errors                              | Backend CORS is permissive (`Any`)                      | CORS should not block requests; check if API is reachable               |
 
 ---
 

@@ -4,7 +4,7 @@ This directory contains the configuration for JupyterHub with nbgrader integrati
 
 ## Architecture
 
-```
+```text
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   Frontend      │     │   Backend       │     │   JupyterHub    │
 │   (Next.js)     │────▶│   (Rust/Axum)   │────▶│   (Python)      │

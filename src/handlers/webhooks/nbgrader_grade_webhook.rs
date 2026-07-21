@@ -45,13 +45,20 @@ pub async fn nbgrader_grade_webhook(
         manual_graded_at: Option<time::OffsetDateTime>,
     }
 
+    // Target the attempt that is actually awaiting a grade. A grade must never
+    // land on an `in_progress` attempt: a student can submit attempt N (which
+    // becomes `grading_pending`) and immediately start attempt N+1 (`in_progress`)
+    // before the async grade arrives. Selecting the latest attempt regardless of
+    // status would then credit the score to the wrong attempt. We prefer
+    // `grading_pending`, then fall back to `graded` (e.g. an admin re-grade), and
+    // exclude `in_progress`/`not_started`/`error`.
     let existing: Option<SubmissionRow> = sqlx::query_as(
         r#"
         SELECT id, manual_graded_at
         FROM challenge_submissions
         WHERE user_id = $1 AND challenge_id = $2
-          AND status IN ('in_progress', 'grading_pending', 'graded')
-        ORDER BY attempt_number DESC
+          AND status IN ('grading_pending', 'graded')
+        ORDER BY (status = 'grading_pending') DESC, attempt_number DESC
         LIMIT 1
         "#,
     )

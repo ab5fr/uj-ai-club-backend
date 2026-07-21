@@ -5,8 +5,12 @@ use crate::{AppState, error::AppError, models::*};
 const MAX_MESSAGE_CHARS: usize = 5000;
 
 fn client_ip(headers: &HeaderMap) -> Option<String> {
-    // Prefer X-Real-IP set by the trusted reverse proxy. Do not trust the leftmost
-    // X-Forwarded-For hop, which clients can spoof to bypass rate limits.
+    // Prefer `X-Real-IP`: the reverse proxy (nginx) overwrites this with the real
+    // peer address on every request, so clients cannot spoof it. Fall back to the
+    // RIGHT-most `X-Forwarded-For` entry, which is the hop appended by our own
+    // proxy; the left-most entries are client-supplied and therefore spoofable.
+    // Using the left-most token here would let an attacker rotate a fake IP to
+    // defeat the per-IP rate limit below.
     headers
         .get("x-real-ip")
         .and_then(|value| value.to_str().ok())
@@ -146,4 +150,46 @@ pub async fn create_contact(
         success: true,
         message: "Message sent successfully".to_string(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::client_ip;
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn prefers_trusted_x_real_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "9.9.9.9, 203.0.113.9".parse().unwrap());
+        headers.insert("x-real-ip", "203.0.113.9".parse().unwrap());
+        assert_eq!(client_ip(&headers).as_deref(), Some("203.0.113.9"));
+    }
+
+    #[test]
+    fn ignores_spoofed_leftmost_forwarded_for() {
+        // Attacker supplies a fake IP; nginx appends the real peer on the right.
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "9.9.9.9, 203.0.113.9".parse().unwrap());
+        assert_eq!(client_ip(&headers).as_deref(), Some("203.0.113.9"));
+    }
+
+    #[test]
+    fn uses_only_forwarded_for_entry_when_single() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.9".parse().unwrap());
+        assert_eq!(client_ip(&headers).as_deref(), Some("203.0.113.9"));
+    }
+
+    #[test]
+    fn trims_whitespace() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-real-ip", "203.0.113.9 ".parse().unwrap());
+        assert_eq!(client_ip(&headers).as_deref(), Some("203.0.113.9"));
+    }
+
+    #[test]
+    fn returns_none_without_ip_headers() {
+        let headers = HeaderMap::new();
+        assert_eq!(client_ip(&headers), None);
+    }
 }
